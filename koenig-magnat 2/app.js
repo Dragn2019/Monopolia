@@ -1,0 +1,671 @@
+/* Интерфейс, сеть, звук и анимации. Правила лежат в engine.js, наполнение в data.js, рисунки в art.js. */
+const { BOARD, GROUPS, TOKENS } = DATA;
+const $ = (s) => document.querySelector(s), $$ = (s) => [...document.querySelectorAll(s)];
+const esc = (t) => String(t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const PREFIX = 'koenig-magnat-';
+const store = (st) => ({ get(k) { try { return st.getItem(k); } catch (e) { return null; } }, set(k, v) { try { st.setItem(k, v); } catch (e) {} }, del(k) { try { st.removeItem(k); } catch (e) {} } });
+const LS = store(window.localStorage), SS = store(window.sessionStorage);
+
+let S = null, V = null, mode = null, myPid = null, code = null, peer = null, conn = null, online = false, statusText = '', offset = 0;
+const conns = {}, queue = [];
+let pumping = false, busy = false, boardBuilt = false, pickedToken = null, unread = 0, LC = 11, LR = 11, tokPos = {}, lastKey = '', tradeN = null, lastTick = -1;
+
+const tokOf = (id) => TOKENS.find((t) => t.id === id);
+const tokHTML = (t) => `<span class="tk" style="background:${t.color}"><svg viewBox="0 0 24 24" fill="#fff">${t.text ? `<text x="12" y="14.4" text-anchor="middle" font-size="6.4" font-weight="900" fill="#231a00" textLength="20" lengthAdjust="spacingAndGlyphs">${t.text}</text>` : t.svg}</svg></span>`;
+const PL = (id) => (V ? V.players.find((p) => p.id === id) : null);
+const isHost = () => mode !== 'client';
+const me = () => (mode === 'local' ? (V && V.phase === 'play' ? Engine.actor(V) : null) : myPid);
+const randId = () => 'p' + Math.random().toString(36).slice(2, 10);
+const randCode = () => Array.from({ length: 5 }, () => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[Math.floor(Math.random() * 32)]).join('');
+const cellColor = (c) => (c.t === 'prop' ? GROUPS[c.g].color : c.t === 'transport' ? '#5b6b8c' : c.t === 'utility' ? '#0f9b94' : c.t === 'card' ? (c.deck === 'D' ? '#7357e8' : '#c2255c') : '#2a3b5f');
+const cellKind = (c) => (c.t === 'prop' ? `Группа «${GROUPS[c.g].name}»` : c.t === 'transport' ? 'Транспорт' : c.t === 'utility' ? 'Предприятие' : '');
+
+function toast(m) { const t = $('#toast'); t.textContent = m; t.classList.remove('hide'); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.add('hide'), 2800); Snd.play('err'); }
+let modalFn = null;
+function closeModal() { $('#modal').classList.add('hide'); $('#modal').innerHTML = ''; modalFn = null; }
+function openModal(fn) { modalFn = fn; $('#modal').classList.remove('hide'); fn(); }
+$('#modal').addEventListener('click', (e) => { if (e.target.id === 'modal') closeModal(); });
+
+/* ---------- Звук: всё синтезируется на лету, файлов нет ---------- */
+const Snd = (() => {
+  let ctx = null, on = LS.get('km_snd') !== '0';
+  const ac = () => { if (!ctx) { const C = window.AudioContext || window.webkitAudioContext; if (!C) return null; ctx = new C(); } if (ctx.state === 'suspended') ctx.resume(); return ctx; };
+  function tone(f, at, dur, type, vol, f2) {
+    const c = ac(); if (!c) return; const t = c.currentTime + at, o = c.createOscillator(), g = c.createGain();
+    o.type = type || 'sine'; o.frequency.setValueAtTime(f, t); if (f2) o.frequency.exponentialRampToValueAtTime(f2, t + dur);
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol || 0.18, t + 0.012); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g).connect(c.destination); o.start(t); o.stop(t + dur + 0.03);
+  }
+  function noise(at, dur, freq, q, vol) {
+    const c = ac(); if (!c) return; const t = c.currentTime + at, n = Math.floor(c.sampleRate * dur), b = c.createBuffer(1, n, c.sampleRate), d = b.getChannelData(0);
+    for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
+    const s = c.createBufferSource(), f = c.createBiquadFilter(), g = c.createGain();
+    s.buffer = b; f.type = 'bandpass'; f.frequency.value = freq; f.Q.value = q || 1;
+    g.gain.setValueAtTime(vol || 0.2, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    s.connect(f).connect(g).connect(c.destination); s.start(t);
+  }
+  const lib = {
+    dice() { for (let i = 0; i < 8; i++) noise(i * 0.065 + Math.random() * 0.02, 0.05, 1500 + Math.random() * 2200, 2.5, 0.3); },
+    double() { tone(880, 0, 0.1, 'triangle', 0.16); tone(1175, 0.09, 0.16, 'triangle', 0.16); },
+    step(k) { tone(430 + ((k || 0) % 6) * 28, 0, 0.07, 'triangle', 0.16, 300); },
+    whoosh() { noise(0, 0.35, 900, 0.7, 0.22); tone(300, 0, 0.3, 'sine', 0.08, 900); },
+    card() { noise(0, 0.16, 3200, 0.8, 0.2); tone(660, 0.1, 0.14, 'sine', 0.1); },
+    coin() { tone(1320, 0, 0.09, 'square', 0.07); tone(1760, 0.07, 0.22, 'square', 0.07); },
+    pay() { tone(700, 0, 0.09, 'triangle', 0.15); tone(520, 0.09, 0.1, 'triangle', 0.15); tone(390, 0.18, 0.2, 'triangle', 0.15); },
+    buy() { noise(0, 0.05, 4000, 1, 0.2); tone(1047, 0.03, 0.1, 'triangle', 0.18); tone(1319, 0.11, 0.1, 'triangle', 0.18); tone(1568, 0.19, 0.3, 'triangle', 0.18); },
+    offer() { tone(587, 0, 0.12, 'sine', 0.13); tone(784, 0.1, 0.2, 'sine', 0.13); },
+    gavel() { tone(170, 0, 0.12, 'square', 0.2, 80); tone(170, 0.16, 0.16, 'square', 0.2, 70); },
+    bid() { tone(880, 0, 0.06, 'square', 0.08); },
+    pass() { tone(300, 0, 0.12, 'sine', 0.12, 220); },
+    sold() { tone(150, 0, 0.2, 'square', 0.22, 60); tone(1047, 0.18, 0.12, 'triangle', 0.16); tone(1568, 0.28, 0.3, 'triangle', 0.16); },
+    build() { for (let i = 0; i < 3; i++) { noise(i * 0.12, 0.04, 900, 3, 0.35); tone(210, i * 0.12, 0.05, 'square', 0.1); } },
+    honk() { tone(310, 0, 0.18, 'square', 0.09); tone(370, 0, 0.18, 'square', 0.09); tone(310, 0.24, 0.3, 'square', 0.09); tone(370, 0.24, 0.3, 'square', 0.09); },
+    boing() { tone(220, 0, 0.3, 'sine', 0.22, 660); tone(660, 0.28, 0.2, 'sine', 0.12, 330); },
+    fire() { noise(0, 0.7, 500, 0.5, 0.3); },
+    lap() { tone(784, 0, 0.1, 'triangle', 0.15); tone(988, 0.09, 0.1, 'triangle', 0.15); tone(1319, 0.18, 0.25, 'triangle', 0.15); },
+    turn() { tone(520, 0, 0.08, 'sine', 0.07); },
+    myturn() { tone(659, 0, 0.14, 'sine', 0.2); tone(880, 0.13, 0.14, 'sine', 0.2); tone(1319, 0.26, 0.35, 'sine', 0.2); },
+    pop() { tone(500, 0, 0.09, 'sine', 0.16, 900); },
+    tick() { tone(1000, 0, 0.04, 'square', 0.06); },
+    low() { tone(160, 0, 0.35, 'sawtooth', 0.1, 90); },
+    sad() { tone(440, 0, 0.2, 'triangle', 0.15); tone(370, 0.2, 0.2, 'triangle', 0.15); tone(294, 0.4, 0.5, 'triangle', 0.15); },
+    start() { [523, 659, 784, 1047].forEach((f, i) => tone(f, i * 0.1, 0.22, 'triangle', 0.16)); },
+    win() { [523, 659, 784, 1047, 784, 1047, 1319].forEach((f, i) => tone(f, i * 0.13, 0.3, 'triangle', 0.18)); },
+    err() { tone(200, 0, 0.14, 'square', 0.06, 150); },
+  };
+  return {
+    play(n, a) { if (!on) return; try { lib[n] && lib[n](a); } catch (e) {} },
+    toggle() { on = !on; LS.set('km_snd', on ? '1' : '0'); if (on) this.play('pop'); return on; },
+    get on() { return on; }, unlock: ac,
+  };
+})();
+document.addEventListener('pointerdown', () => Snd.unlock(), { passive: true });
+
+/* ---------- Действия и сеть ---------- */
+function act(type, extra) {
+  const a = Object.assign({ type }, extra || {});
+  if (!a.pid) a.pid = me();
+  if (mode === 'client') { if (conn && conn.open) conn.send({ t: 'act', a }); else toast('Нет связи с комнатой, переподключаюсь'); return; }
+  hostApply(a, null);
+}
+function hostApply(a, cn) {
+  const err = Engine.apply(S, a);
+  if (err) { if (cn) cn.send({ t: 'err', m: err }); else toast(err); return false; }
+  commit(); return true;
+}
+function animTime(evs) { let t = 300; (evs || []).forEach((e) => { t += e.t === 'roll' ? 800 : e.t === 'move' ? (e.mode === 'jump' ? 600 : 1500) : e.t === 'card' ? 2400 : e.t === 'chat' || e.t === 'emo' ? 0 : 320; }); return Math.min(t, 8000); }
+// Таймер ведёт создатель комнаты: когда меняется «чей выбор», выставляется новый дедлайн
+function armTimers() {
+  const key = Engine.turnKey(S), T = S.opt.timer;
+  if (S.phase !== 'play' || !T) { S.deadline = 0; S.dur = 0; }
+  else if (key !== lastKey) { const dur = (S.afk === Engine.actor(S) ? 6 : S.auction ? Math.min(T, 25) : T) * 1000; S.dur = dur; S.deadline = Date.now() + dur + animTime(S.ev); }
+  lastKey = key;
+  if (S.trade) { if (S.trade.n !== tradeN) { tradeN = S.trade.n; S.tradeDeadline = Date.now() + 45000; } } else { tradeN = null; S.tradeDeadline = 0; }
+}
+function commit() {
+  armTimers();
+  const json = JSON.stringify(S), snap = JSON.parse(json);
+  if (mode === 'host') { LS.set('km_state_' + code, json); Object.values(conns).forEach((c) => { if (c.open) c.send({ t: 'state', s: snap, now: Date.now() }); }); }
+  enqueue(snap);
+}
+setInterval(() => {
+  if (!S || mode === 'client' || S.phase !== 'play' || !S.opt) return;
+  const now = Date.now();
+  if (S.trade && S.tradeDeadline && now > S.tradeDeadline) return void hostApply({ type: 'rejectTrade', pid: S.trade.to }, null);
+  if (S.deadline && now > S.deadline) hostApply({ type: 'timeout', pid: S.hostId }, null);
+}, 400);
+
+function pidFor(c, host) {
+  if (host) { let p = LS.get('km_hostpid_' + c); if (!p) { p = randId(); LS.set('km_hostpid_' + c, p); } return p; }
+  let p = SS.get('km_pid_' + c) || LS.get('km_pid_' + c);
+  if (!p) { p = randId(); LS.set('km_pid_' + c, p); }
+  SS.set('km_pid_' + c, p); return p;
+}
+function startHost(c, saved) {
+  mode = 'host'; code = c; myPid = pidFor(c, true); LS.set('km_last_host', c);
+  S = saved || Engine.newGame(myPid);
+  S.ev = []; S.players.forEach((p) => (p.on = p.id === myPid));
+  lastKey = ''; location.hash = c; statusText = 'Открываю комнату…';
+  let tries = 0;
+  const open = () => {
+    peer = new Peer(PREFIX + c);
+    peer.on('open', () => { online = true; statusText = ''; render(); });
+    peer.on('connection', (cn) => {
+      cn.on('data', (m) => hostMsg(cn, m));
+      cn.on('close', () => { if (cn.pid && conns[cn.pid] === cn) { delete conns[cn.pid]; const p = S.players.find((x) => x.id === cn.pid); if (p) p.on = false; S.ev = []; commit(); } });
+    });
+    peer.on('disconnected', () => { online = false; render(); setTimeout(() => { if (peer && !peer.destroyed) peer.reconnect(); }, 1500); });
+    peer.on('error', (e) => {
+      if (e.type === 'unavailable-id' && tries++ < 15) { statusText = 'Жду, пока освободится код комнаты…'; render(); peer.destroy(); setTimeout(open, 2000); }
+      else if (e.type !== 'peer-unavailable') { online = false; statusText = 'Проблема со связью: ' + e.type; render(); }
+    });
+  };
+  open(); commit();
+}
+function hostMsg(cn, m) {
+  if (m.t === 'hello') {
+    let pid = m.pid;
+    if (pid === myPid || (conns[pid] && conns[pid] !== cn && conns[pid].open)) return cn.send({ t: 'newid' });
+    if (S.phase !== 'lobby' && !S.players.find((x) => x.id === pid) && m.name) {
+      const p = S.players.find((x) => !x.on && x.id !== myPid && x.name.toLowerCase() === String(m.name).toLowerCase());
+      if (p) { pid = p.id; cn.send({ t: 'you', pid }); }
+    }
+    cn.pid = pid; conns[pid] = cn;
+    const p = S.players.find((x) => x.id === pid); if (p) p.on = true;
+    S.ev = []; commit();
+  } else if (m.t === 'act' && cn.pid && m.a) {
+    const a = m.a; a.pid = cn.pid;
+    if (['start', 'finishGame', 'hostSkip', 'timeout', 'setOpt'].includes(a.type)) return;
+    hostApply(a, cn);
+  }
+}
+function startClient(c) {
+  mode = 'client'; code = c; myPid = pidFor(c); location.hash = c;
+  statusText = 'Подключаюсь к комнате ' + c + '…'; V = null; render();
+  peer = new Peer();
+  const connect = () => {
+    if (!peer || peer.destroyed) return;
+    conn = peer.connect(PREFIX + c, { reliable: true });
+    conn.on('open', () => { online = true; statusText = ''; conn.send({ t: 'hello', pid: myPid, name: LS.get('km_name') || '' }); render(); });
+    conn.on('data', (m) => {
+      if (m.t === 'state') { offset = (m.now || Date.now()) - Date.now(); enqueue(m.s); }
+      else if (m.t === 'err') toast(m.m);
+      else if (m.t === 'you') { myPid = m.pid; SS.set('km_pid_' + c, myPid); LS.set('km_pid_' + c, myPid); }
+      else if (m.t === 'newid') { myPid = randId(); SS.set('km_pid_' + c, myPid); conn.send({ t: 'hello', pid: myPid, name: '' }); }
+    });
+    conn.on('close', () => { online = false; statusText = 'Связь потеряна, переподключаюсь…'; render(); setTimeout(connect, 2000); });
+  };
+  peer.on('open', connect);
+  peer.on('disconnected', () => setTimeout(() => { if (peer && !peer.destroyed) peer.reconnect(); }, 1500));
+  peer.on('error', (e) => {
+    if (e.type === 'peer-unavailable') { statusText = 'Комната ' + c + ' пока не отвечает. Создатель должен держать вкладку открытой. Пробую ещё…'; render(); setTimeout(connect, 3000); }
+    else { statusText = 'Проблема со связью: ' + e.type; render(); }
+  });
+}
+function startLocal() { mode = 'local'; myPid = null; S = Engine.newGame('local'); S.opt.timer = 0; lastKey = ''; commit(); }
+
+/* ---------- Очередь состояний: каждое новое состояние сначала проигрывается анимацией ---------- */
+function enqueue(ns) { queue.push(ns); pump(); }
+async function pump() {
+  if (pumping) return; pumping = true;
+  while (queue.length) {
+    const ns = queue.shift();
+    const anim = V && V.phase !== 'lobby' && ns.seq > V.seq && ns.ev && ns.ev.length && queue.length < 3 && !document.hidden && !window.FAST;
+    if (anim) { busy = true; $('#actions').classList.add('busy'); try { await playEvents(ns); } catch (e) { console.error(e); } busy = false; }
+    else if (V && ns.ev) ns.ev.forEach((e) => { if (e.t === 'join') Snd.play('pop'); if (e.t === 'start') Snd.play('start'); if (e.t === 'chat') noteChat(e, ns); });
+    V = ns; render();
+  }
+  pumping = false;
+}
+function noteChat(e, ns) {
+  const p = ns.players.find((x) => x.id === e.pid);
+  if (mode === 'local' || e.pid !== myPid) Snd.play('pop');
+  if (!$('#hub') || !$('#hub').classList.contains('feedopen')) { unread++; }
+  if (p) bubble(e.pid, e.text);
+}
+async function playEvents(ns) {
+  const mine = (id) => mode !== 'local' && id === myPid;
+  for (const e of ns.ev) {
+    switch (e.t) {
+      case 'roll': {
+        Snd.play('dice'); const ds = $$('.die'); ds.forEach((x) => x.classList.add('rolling'));
+        for (let k = 0; k < 8; k++) { setDice([1 + Math.floor(Math.random() * 6), 1 + Math.floor(Math.random() * 6)]); await sleep(65); }
+        ds.forEach((x) => x.classList.remove('rolling')); setDice(e.d);
+        if (e.d[0] === e.d[1]) Snd.play('double');
+        await sleep(280); break;
+      }
+      case 'move': {
+        const el = document.getElementById('t_' + e.pid); if (!el) break;
+        if (e.mode === 'jump') { el.classList.add('slow'); tokPos[e.pid] = e.to; placeTokens(); Snd.play('whoosh'); await sleep(600); el.classList.remove('slow'); }
+        else {
+          const dir = e.mode === 'back' ? -1 : 1, n = ((e.to - e.from) * dir + 40) % 40, d = Math.max(55, Math.min(150, 1500 / Math.max(n, 1)));
+          for (let k = 1; k <= n; k++) {
+            tokPos[e.pid] = (e.from + dir * k + 40) % 40; placeTokens(); markHere(tokPos[e.pid]); Snd.play('step', k);
+            el.firstChild.animate([{ transform: 'translateY(0) scale(1)' }, { transform: 'translateY(-28%) scale(1.18)' }, { transform: 'translateY(0) scale(1)' }], { duration: d });
+            await sleep(d);
+          }
+          await sleep(140);
+        }
+        break;
+      }
+      case 'lap': Snd.play('lap'); break;
+      case 'gain': flo(e.pid, '+' + e.amount, 'plus'); Snd.play('coin'); await sleep(300); break;
+      case 'pay': flo(e.from, '−' + e.amount, 'minus'); if (ns.players.find((p) => p.id === e.to)) flo(e.to, '+' + e.amount, 'plus'); Snd.play('pay'); await sleep(420); break;
+      case 'card': $('#spot').innerHTML = cardHTML(e, true); Snd.play('card'); await sleep(Math.min(2900, 1300 + e.text.length * 14)); break;
+      case 'offer': Snd.play('offer'); break;
+      case 'buy': Snd.play('buy'); flo(e.pid, '−' + e.amount, 'minus'); flashCell(e.cell); await sleep(380); break;
+      case 'auction': Snd.play('gavel'); await sleep(200); break;
+      case 'bid': Snd.play('bid'); break;
+      case 'apass': case 'nosale': case 'nodeal': Snd.play('pass'); break;
+      case 'sold': Snd.play('sold'); flo(e.pid, '−' + e.amount, 'minus'); flashCell(e.cell); await sleep(420); break;
+      case 'build': Snd.play('build'); flo(e.pid, '−' + e.amount, 'minus'); flashCell(e.cell); await sleep(260); break;
+      case 'sell': case 'mortgage': Snd.play('coin'); flo(e.pid, '+' + e.amount, 'plus'); break;
+      case 'unmortgage': Snd.play('pay'); flo(e.pid, '−' + e.amount, 'minus'); break;
+      case 'jail': Snd.play('honk'); await sleep(450); break;
+      case 'ball': Snd.play('boing'); await sleep(220); break;
+      case 'fire': Snd.play('fire'); flashCell(e.cell); await sleep(400); break;
+      case 'turn': Snd.play(mine(e.pid) ? 'myturn' : 'turn'); break;
+      case 'chat': noteChat(e, ns); break;
+      case 'emo': flo(e.pid, e.e, 'emo'); Snd.play('pop'); break;
+      case 'trade': if (mine(e.to)) Snd.play('myturn'); else Snd.play('offer'); break;
+      case 'deal': Snd.play('buy'); break;
+      case 'debt': Snd.play('low'); break;
+      case 'timeout': flo(e.pid, '⏰', 'minus'); break;
+      case 'free': Snd.play('whoosh'); break;
+      case 'bankrupt': Snd.play('sad'); await sleep(500); break;
+      case 'win': Snd.play('win'); confetti(); break;
+      case 'start': Snd.play('start'); break;
+    }
+  }
+}
+
+/* ---------- Эффекты поверх экрана ---------- */
+function chipRect(pid) { const el = document.getElementById('pc_' + pid); return el ? el.getBoundingClientRect() : null; }
+function flo(pid, text, cls) {
+  const r = chipRect(pid); if (!r) return;
+  const d = document.createElement('div'); d.className = 'flo ' + cls; d.textContent = text;
+  d.style.left = r.left + r.width * (cls === 'emo' ? 0.35 : 0.55) + Math.random() * 14 + 'px'; d.style.top = r.top + (cls === 'emo' ? -8 : r.height / 2 - 12) + 'px';
+  $('#fx').appendChild(d); setTimeout(() => d.remove(), 2000);
+}
+function bubble(pid, text) {
+  const r = chipRect(pid); if (!r) return;
+  const d = document.createElement('div'); d.className = 'bub'; d.textContent = text;
+  d.style.left = Math.max(6, Math.min(r.left + 14, innerWidth - 240)) + 'px'; d.style.top = r.bottom + 2 + 'px';
+  $('#fx').appendChild(d); setTimeout(() => d.remove(), 3700);
+}
+function flashCell(i) { const c = document.getElementById('c' + i); if (c) c.animate([{ transform: 'scale(1)', filter: 'brightness(1)' }, { transform: 'scale(1.12)', filter: 'brightness(1.7)' }, { transform: 'scale(1)', filter: 'brightness(1)' }], { duration: 450 }); }
+function markHere(i) { $$('.cell.here').forEach((c) => c.classList.remove('here')); const c = document.getElementById('c' + i); if (c) c.classList.add('here'); }
+function confetti() {
+  const cols = ['#ffc24d', '#4fd695', '#ff6b6b', '#4263eb', '#e0569f', '#fff'];
+  for (let i = 0; i < 70; i++) { const d = document.createElement('div'); d.className = 'conf'; d.style.left = Math.random() * 100 + 'vw'; d.style.background = cols[i % cols.length]; d.style.animationDuration = 2 + Math.random() * 2.5 + 's'; d.style.animationDelay = Math.random() * 0.8 + 's'; $('#fx').appendChild(d); setTimeout(() => d.remove(), 5600); }
+}
+
+/* ---------- Город на горизонте ---------- */
+function skyline() {
+  let f = '', w = '';
+  const house = (x, wd, h) => {
+    f += `M${x} 240V${240 - h}l${wd / 2} ${-wd * 0.5} ${wd / 2} ${wd * 0.5}V240z`;
+    for (let r = 0; r < Math.floor(h / 36); r++) for (let c = 0; c < Math.floor(wd / 24); c++) if ((x + r * 7 + c * 5) % 3) w += `<rect x="${x + 10 + c * 24}" y="${240 - h + 16 + r * 32}" width="8" height="12" rx="1"/>`;
+  };
+  [[10, 70, 86], [80, 60, 122], [140, 78, 98], [218, 58, 136], [276, 72, 92], [878, 66, 92], [944, 72, 126], [1016, 60, 100], [1076, 84, 114], [1160, 60, 84]].forEach((a) => house(...a));
+  f += 'M510 240V152l62-48 62 48v88zM634 240V86h66v154zM626 86l41-72 41 72zM404 240l11-130h36l11 130zM410 112h46v-9h-46zM417 103V78h32v25zM413 78l20-19 20 19z';
+  w += '<circle cx="667" cy="114" r="10"/><rect x="659" y="152" width="16" height="30" rx="8"/><circle cx="572" cy="154" r="12"/><rect x="423" y="83" width="20" height="16"/>';
+  const back = 'M770 240V66h11v174zM728 76h140v8H728zM728 84h26v20h-26zM852 84h3v46h-3zM846 130h15v12h-15zM330 240v-40q28-30 56 0v40zM1130 240v-52q22-26 44 0v52z';
+  return `<svg class="sky" viewBox="0 0 1200 240" preserveAspectRatio="xMidYMax slice" aria-hidden="true"><path d="${back}" fill="#18294a"/><path d="${f}" fill="#1c3054"/><g fill="#ffc24d" opacity=".75">${w}</g><path d="M0 232q30-8 60 0t60 0 60 0 60 0 60 0 60 0 60 0 60 0 60 0 60 0 60 0 60 0 60 0 60 0 60 0 60 0 60 0 60 0 60 0 60 0v8H0z" fill="#12203a"/></svg>`;
+}
+
+/* ---------- Экраны ---------- */
+function render() {
+  const show = (id) => ['home', 'lobby', 'game'].forEach((x) => $('#' + x).classList.toggle('hide', x !== id));
+  if (!mode) return show('home');
+  if (!V || V.phase === 'lobby') { show('lobby'); return renderLobby(); }
+  show('game'); renderGame();
+  if (modalFn) modalFn();
+}
+function renderLobby() {
+  const box = $('#lobbybox');
+  if (!V) { box.innerHTML = `<h2>Комната ${esc(code)}</h2><p class="sub">${esc(statusText)}</p><button class="ghost" onclick="location.hash='';location.reload()">Назад</button>`; return; }
+  const mine = mode === 'local' ? null : PL(myPid);
+  const taken = (t) => V.players.some((p) => p.token === t && p.id !== (mine && mine.id));
+  if (!pickedToken || taken(pickedToken)) pickedToken = mine ? mine.token : (TOKENS.find((t) => !taken(t.id)) || {}).id;
+  const link = location.origin + location.pathname + '#' + code;
+  const hadFocus = document.activeElement && document.activeElement.id === 'lname';
+  const nameVal = hadFocus ? $('#lname').value : mine ? mine.name : mode === 'local' ? '' : LS.get('km_name') || '';
+  const o = V.opt, host = isHost();
+  const seg = [0, 30, 60, 90].map((t) => `<button class="${o.timer === t ? 'on' : ''}" data-timer="${t}" ${host ? '' : 'disabled'}>${t ? t + ' с' : 'выкл'}</button>`).join('');
+  box.innerHTML = `
+    ${mode === 'local' ? '<h2>На одном устройстве</h2><p class="sub">Добавьте игроков по очереди и передавайте устройство по кругу</p>' : `
+      <p class="sub">Код комнаты</p><div class="codebig">${esc(code)}</div>
+      <div class="row"><input readonly value="${esc(link)}" id="llink"><button class="fix" id="bcopy">Копировать</button></div>
+      ${statusText ? `<p class="sub">${esc(statusText)}</p>` : ''}`}
+    <div class="plist">${V.players.map((p) => `<div class="pl">${tokHTML(tokOf(p.token))}<span class="nm2">${esc(p.name)}${p.id === V.hostId ? ' <small>создатель</small>' : ''}</span>${mode === 'local' ? `<button class="sm ghost" data-rm="${p.id}">убрать</button>` : `<span class="dot ${p.on ? '' : 'off'}"></span>`}</div>`).join('') || '<p class="sub">Пока никого</p>'}</div>
+    <input id="lname" maxlength="14" placeholder="${mode === 'local' ? 'Имя игрока' : 'Твоё имя'}" value="${esc(nameVal)}" autocomplete="off">
+    <div class="tokens">${TOKENS.map((t) => `<button class="tokpick ${pickedToken === t.id ? 'sel' : ''} ${taken(t.id) ? 'taken' : ''}" data-tok="${t.id}">${tokHTML(t)}${esc(t.name)}</button>`).join('')}</div>
+    <button id="bset" class="${mine ? '' : 'primary'}">${mode === 'local' ? 'Добавить игрока' : mine ? 'Сохранить имя и фишку' : 'Сесть за стол'}</button>
+    <div class="opts">
+      <div class="opt"><span>Таймер хода<small>Не успел — игра сходит за тебя</small></span><div class="seg">${seg}</div></div>
+      <div class="opt"><span>Общак на парковке<small>Домашнее правило: штрафы копятся</small></span><button class="sw2 ${o.pot ? 'on' : ''}" data-opt="pot" ${host ? '' : 'disabled'}></button></div>
+      <div class="opt"><span>Мячик Челси<small>+${DATA.BALL_BONUS} тому, кто встал на клетку с мячиком</small></span><button class="sw2 ${o.ball ? 'on' : ''}" data-opt="ball" ${host ? '' : 'disabled'}></button></div>
+    </div>
+    ${host ? `<button class="primary" id="bstart" ${V.players.length < 2 ? 'disabled' : ''}>Начать игру (${V.players.length}/6)</button>` : '<p class="sub">Ждём, пока создатель комнаты начнёт игру</p>'}
+    <button class="ghost sm" id="brulesL">Правила</button>`;
+  if (hadFocus) { const i = $('#lname'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }
+  box.querySelectorAll('[data-tok]').forEach((b) => (b.onclick = () => { if (!taken(b.dataset.tok)) { pickedToken = b.dataset.tok; renderLobby(); } }));
+  box.querySelectorAll('[data-rm]').forEach((b) => (b.onclick = () => act('leave', { pid: b.dataset.rm })));
+  box.querySelectorAll('[data-timer]').forEach((b) => (b.onclick = () => act('setOpt', { pid: V.hostId, opt: { timer: +b.dataset.timer } })));
+  box.querySelectorAll('[data-opt]').forEach((b) => (b.onclick = () => act('setOpt', { pid: V.hostId, opt: { [b.dataset.opt]: !o[b.dataset.opt] } })));
+  $('#bset').onclick = () => {
+    const name = $('#lname').value.trim();
+    if (mode !== 'local') LS.set('km_name', name);
+    const tok = pickedToken;
+    if (mode === 'local') pickedToken = null;
+    act('join', { pid: mode === 'local' ? randId() : myPid, name, token: tok });
+    if (mode === 'local') renderLobby();
+  };
+  $('#brulesL').onclick = () => openModal(rulesModal);
+  if ($('#bstart')) $('#bstart').onclick = () => act('start', { pid: V.hostId });
+  if ($('#bcopy')) $('#bcopy').onclick = copyLink;
+}
+function copyLink() {
+  const link = location.origin + location.pathname + '#' + code;
+  (navigator.clipboard ? navigator.clipboard.writeText(link) : Promise.reject()).catch(() => { const i = $('#llink'); if (i) { i.select(); document.execCommand('copy'); } });
+  const t = $('#toast'); t.textContent = 'Ссылка скопирована, кидай друзьям'; t.classList.remove('hide'); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.add('hide'), 2200);
+}
+
+/* ---------- Доска ---------- */
+function cellRC(i) { const C = LC, R = LR; if (i < C) return [R - 1, C - 1 - i]; if (i < C + R - 1) return [R - 1 - (i - (C - 1)), 0]; if (i < 2 * C + R - 2) return [0, i - (C + R - 2)]; return [i - (2 * C + R - 3), C - 1]; }
+const IC = {
+  chat: '<svg viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-11.600 7.100L4 20l1-4.600A8 8 0 1 1 21 12z"/></svg>',
+  son: '<svg viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9zM16.500 9a4 4 0 0 1 0 6M19 6.500a8 8 0 0 1 0 11"/></svg>',
+  soff: '<svg viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9zM17 9.500l5 5M22 9.500l-5 5"/></svg>',
+  help: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.500 9.500a2.500 2.500 0 1 1 3.600 2.200c-.700.400-1.100 1-1.100 1.800M12 17h.010"/></svg>',
+  menu: '<svg viewBox="0 0 24 24"><path style="stroke-width:3" d="M5 12h.010M12 12h.010M19 12h.010"/></svg>',
+};
+function buildBoard() {
+  const b = $('#board'); b.innerHTML = '';
+  BOARD.forEach((c, i) => {
+    const d = document.createElement('div');
+    d.className = 'cell' + (Engine.buyable(c) || c.t === 'card' ? '' : ' special'); d.id = 'c' + i; d.style.setProperty('--g', cellColor(c));
+    const pr = c.price ? c.price : c.amount ? '−' + c.amount : c.t === 'start' ? '+' + DATA.LAP : '';
+    d.innerHTML = `<div class="pic">${Art.cell(i)}</div><div class="meta"><div class="nm">${esc(c.name)}</div>${pr ? `<div class="pr">${pr}</div>` : ''}</div>`;
+    d.onclick = () => openModal(() => cellModal(i));
+    b.appendChild(d);
+  });
+  const hub = document.createElement('div'); hub.id = 'hub';
+  hub.innerHTML = `${skyline()}<div class="hubin">
+    <div class="hubtop"><div class="brand">Кёниг <b>Магнат</b></div><div class="room" id="room"></div>
+      <div class="tools"><button id="bfeed" title="Чат">${IC.chat}<span class="badge hide" id="unread"></span></button><button id="bsound" title="Звук"></button><button id="bhelp" title="Правила">${IC.help}</button><button id="bmenu" title="Меню">${IC.menu}</button></div></div>
+    <div id="players"></div>
+    <div id="stage"><div id="dice"><div class="die">${'<i></i>'.repeat(9)}</div><div class="die">${'<i></i>'.repeat(9)}</div></div><div id="spot"></div><div id="tradebar" class="hide"></div><div id="actions"></div><div id="timer" class="off"><i></i></div><div id="mini"></div></div>
+    <div id="feed"><div class="feedhead"><span>Чат и события</span><button class="sm ghost" id="bfeedx">Закрыть</button></div><div id="feedlist"></div>
+      <div id="emos">${Engine.EMO.map((e) => `<button data-e="${e}">${e}</button>`).join('')}</div>
+      <form id="chatform"><input id="chatin" maxlength="140" placeholder="Написать в чат" autocomplete="off"><button class="primary" aria-label="Отправить">➤</button></form></div>
+  </div>`;
+  b.appendChild(hub);
+  $('#bfeed').onclick = () => { hub.classList.add('feedopen'); unread = 0; renderTop(); scrollFeed(true); };
+  $('#bfeedx').onclick = () => hub.classList.remove('feedopen');
+  $('#mini').onclick = () => $('#bfeed').click();
+  $('#bsound').onclick = () => { Snd.toggle(); renderTop(); };
+  $('#bhelp').onclick = () => openModal(rulesModal);
+  $('#bmenu').onclick = () => openModal(menuModal);
+  $('#emos').onclick = (e) => { const b2 = e.target.closest('[data-e]'); if (b2) act('emo', { e: b2.dataset.e }); };
+  $('#chatform').onsubmit = (e) => { e.preventDefault(); const i = $('#chatin'), t = i.value.trim(); if (t) { act('chat', { text: t }); i.value = ''; } };
+  setDice([1, 1]);
+  boardBuilt = true; layout();
+}
+function layout() {
+  if (!boardBuilt) return;
+  const wrap = $('#boardwrap'), w = wrap.clientWidth, h = wrap.clientHeight; if (!w || !h) return;
+  let best = null;
+  for (let C = 7; C <= 15; C++) { const R = 22 - C, sc = Math.min(w / C, h / R); if (!best || sc > best.sc + 0.01) best = { C, R, sc }; }
+  LC = best.C; LR = best.R;
+  const b = $('#board'); b.style.gridTemplateColumns = `repeat(${LC},minmax(0,1fr))`; b.style.gridTemplateRows = `repeat(${LR},minmax(0,1fr))`;
+  BOARD.forEach((c, i) => { const [r, col] = cellRC(i), d = document.getElementById('c' + i); d.style.gridRow = r + 1; d.style.gridColumn = col + 1; });
+  const hub = $('#hub'); hub.style.gridColumn = `2 / ${LC}`; hub.style.gridRow = `2 / ${LR}`;
+  wrap.style.setProperty('--ts', Math.max(18, Math.min(w / LC, h / LR) * 0.42) + 'px');
+  placeTokens();
+}
+window.addEventListener('resize', layout);
+function placeTokens() {
+  if (!V) return;
+  const wrap = $('#boardwrap'), ts = parseFloat(wrap.style.getPropertyValue('--ts')) || 30, by = {};
+  V.players.forEach((p) => { if (!p.bankrupt) (by[tokPos[p.id]] = by[tokPos[p.id]] || []).push(p.id); });
+  V.players.forEach((p) => {
+    const t = document.getElementById('t_' + p.id); if (!t) return;
+    const pos = tokPos[p.id] || 0, grp = by[pos] || [p.id], k = Math.max(0, grp.indexOf(p.id)), n = grp.length, [r, c] = cellRC(pos);
+    const dx = n > 1 ? ((k % 3) - (Math.min(n, 3) - 1) / 2) * ts * 0.62 : 0, dy = n > 3 ? (Math.floor(k / 3) - 0.5) * ts * 0.7 : 0;
+    t.style.left = `calc(${((c + 0.5) / LC) * 100}% + ${dx}px)`; t.style.top = `calc(${((r + 0.42) / LR) * 100}% + ${dy}px)`;
+  });
+}
+function setDice(d) {
+  const map = { 1: [4], 2: [0, 8], 3: [0, 4, 8], 4: [0, 2, 6, 8], 5: [0, 2, 4, 6, 8], 6: [0, 2, 3, 5, 6, 8] };
+  $$('.die').forEach((el, k) => [...el.children].forEach((i, n) => i.classList.toggle('on', (map[d[k]] || []).includes(n))));
+}
+function renderBoard() {
+  if (!boardBuilt) buildBoard();
+  const wrap = $('#boardwrap'), actor = Engine.actor(V), ap = PL(actor);
+  BOARD.forEach((c, i) => {
+    const d = document.getElementById('c' + i), o = V.owner[i], op = o && PL(o);
+    d.classList.toggle('mort', !!V.mort[i]);
+    d.classList.toggle('owned', !!op);
+    d.classList.toggle('here', V.phase === 'play' && !!ap && ap.pos === i && !V.auction);
+    if (op) d.style.setProperty('--o', tokOf(op.token).color);
+    let ob = d.querySelector('.ob');
+    if (op) { if (!ob) { ob = document.createElement('div'); ob.className = 'ob'; d.firstChild.appendChild(ob); } if (ob.dataset.t !== op.token) { ob.dataset.t = op.token; ob.innerHTML = tokHTML(tokOf(op.token)); } } else if (ob) ob.remove();
+    let hs = d.querySelector('.hs'); const h = V.houses[i];
+    if (h) { if (!hs) { hs = document.createElement('div'); hs.className = 'hs'; d.appendChild(hs); } hs.classList.toggle('hotel', h === 5); hs.textContent = h === 5 ? '★' : '▲' + h; } else if (hs) hs.remove();
+    let bm = d.querySelector('.ballm');
+    if (V.ball === i) { if (!bm) { bm = document.createElement('div'); bm.className = 'ballm'; bm.innerHTML = Art.art('ball'); d.firstChild.appendChild(bm); } } else if (bm) bm.remove();
+  });
+  V.players.forEach((p) => {
+    let t = document.getElementById('t_' + p.id);
+    if (!t) { t = document.createElement('div'); t.className = 'tok'; t.id = 't_' + p.id; t.innerHTML = tokHTML(tokOf(p.token)); wrap.appendChild(t); }
+    t.classList.toggle('hide', p.bankrupt); t.classList.toggle('active', p.id === actor);
+    tokPos[p.id] = p.pos;
+  });
+  placeTokens();
+  if (V.dice[0]) setDice(V.dice);
+}
+
+/* ---------- Центр: игроки, сцена, чат ---------- */
+function renderTop() {
+  $('#room').innerHTML = mode === 'local' ? 'Игра на одном устройстве' : `<span class="dot ${online ? '' : 'off'}"></span>Комната <b>${esc(code)}</b> ${esc(statusText)}`;
+  $('#bsound').innerHTML = Snd.on ? IC.son : IC.soff;
+  const u = $('#unread'); u.textContent = unread; u.classList.toggle('hide', !unread);
+  $('#hub').classList.toggle('local', mode === 'local');
+}
+function renderPlayers() {
+  const my = me(), actor = Engine.actor(V);
+  $('#players').innerHTML = V.players.map((p) => {
+    const props = BOARD.filter((c, i) => V.owner[i] === p.id).length;
+    const sub = p.bankrupt ? 'банкрот' : `${props} кл.${p.jail ? ' · в пробке' : ''}${p.jailCards ? ' · объезд ×' + p.jailCards : ''}${mode !== 'local' && !p.on ? ' · не в сети' : ''}`;
+    return `<div class="chip ${p.id === actor ? 'turn' : ''} ${p.bankrupt ? 'out' : ''}" id="pc_${p.id}" data-p="${p.id}">${tokHTML(tokOf(p.token))}<span class="who"><span class="nm2">${esc(p.name)}${p.id === my && mode !== 'local' ? ' · ты' : ''}</span><small>${sub}</small></span><span class="mn">${p.bankrupt ? '—' : p.money}</span>${p.id === actor ? '<span class="secs"></span>' : ''}</div>`;
+  }).join('');
+  $$('#players .chip').forEach((c) => (c.onclick = () => openModal(() => playerModal(c.dataset.p))));
+}
+const cardHTML = (c, pop) => `<div class="gcard ${c.deck} ${pop ? 'pop' : ''}"><b>${c.deck === 'D' ? 'Движ' : 'Сторис'}</b>${esc(c.text)}</div>`;
+function deedHead(i) { const c = BOARD[i]; return `<div class="dhead"><div class="dart">${Art.cell(i)}</div><div><h3>${esc(c.name)}</h3><small>${cellKind(c)}</small></div>${c.price ? `<div class="dprice">${c.price}</div>` : ''}</div>`; }
+function deedMini(i) {
+  const c = BOARD[i];
+  const st = c.t === 'prop' ? [['Аренда', c.rent[0]], ['Вся группа', c.rent[0] * 2], ['Сеть ★', c.rent[5]]] : c.t === 'transport' ? [['Один', 25], ['Два', 50], ['Все четыре', 200]] : [['Одно', 'кубики ×4'], ['Оба', 'кубики ×10'], ['Залог', c.price / 2]];
+  return `<div class="deed mini" style="--g:${cellColor(c)}" data-cell="${i}">${deedHead(i)}<div class="dstats">${st.map((s) => `<span>${s[0]}<b>${s[1]}</b></span>`).join('')}</div></div>`;
+}
+function renderStage() {
+  const my = me(), actor = Engine.actor(V), cp = V.players[V.turn], mp = PL(my), local = mode === 'local';
+  const btn = (label, a, cls, dis) => `<button class="${cls || ''}" ${dis ? 'disabled' : ''} data-a='${esc(JSON.stringify(a))}'>${label}</button>`;
+  let spot = '', h = '', tb = '';
+  if (V.phase === 'over') {
+    spot = `<div class="wincrown">${Art.art('crown')}</div><h3 style="text-align:center;margin:6px 0 10px">Победил ${esc(PL(V.winner).name)}</h3><div class="rank">${V.final.map((f, k) => { const p = PL(f.id); return `<div class="pl">${tokHTML(tokOf(p.token))}<span class="nm2">${k + 1}. ${esc(p.name)}</span><span class="mn">${f.worth}</span></div>`; }).join('')}</div>`;
+    h = '<p>Капитал: деньги, клетки и постройки</p><button class="primary big" id="bnew">Новая игра</button>';
+  } else {
+    if (V.trade) {
+      const t = V.trade, f = PL(t.from), to = PL(t.to), names = (l) => l.map((i) => '«' + esc(BOARD[i].name) + '»').join(', ');
+      const side = (l, m) => [names(l), m ? m + ' монет' : ''].filter(Boolean).join(' + ') || 'ничего';
+      tb = `<div class="tradebox"><b>🤝 ${esc(f.name)} → ${esc(to.name)}</b><span>Отдаёт: ${side(t.give, t.giveMoney)}</span><span>Хочет: ${side(t.get, t.getMoney)}</span><div class="btns">${local || my === t.to ? btn('Согласиться', { type: 'acceptTrade', pid: t.to }, 'primary') + btn('Отказаться', { type: 'rejectTrade', pid: t.to }) : my === t.from ? btn('Отменить', { type: 'rejectTrade' }) : ''}</div></div>`;
+    }
+    if (V.auction) {
+      const au = V.auction, ap = PL(actor);
+      spot = deedMini(au.cell) + `<p class="bidline" style="margin:10px 0 0">Аукцион · ставка <b>${au.bid || '—'}</b>${au.bidder ? ' · ' + esc(PL(au.bidder).name) : ''}</p>`;
+      if (my === actor) h = `<p class="who">${local ? esc(ap.name) + ', твоя ставка' : 'Твоя ставка'} · у тебя ${ap.money}</p><div class="btns">${[10, 50, 100].map((d) => btn('+' + d, { type: 'bid', amount: au.bid + d }, 'primary', ap.money < au.bid + d)).join('')}${btn('Пас', { type: 'auctionPass' })}</div>`;
+      else h = `<p>Ставит <span class="who">${esc(ap.name)}</span>…</p>`;
+    } else if (V.debt) {
+      const d = V.debt, dp = PL(d.pid);
+      spot = `<div class="hint"><b style="color:var(--bad);font-family:var(--disp)">Долг ${d.amount}</b><br>${esc(dp.name)}: есть ${dp.money}, не хватает ${Math.max(0, d.amount - dp.money)}</div>`;
+      if (my === d.pid) h = `<p>Нажимай на свои клетки, чтобы продать постройки или заложить их, либо предложи обмен.</p><div class="btns">${btn('Заплатить ' + d.amount, { type: 'payDebt' }, 'primary big', dp.money < d.amount)}${btn('Сдаться', { type: 'bankrupt' }, 'danger')}</div>`;
+      else h = `<p>${esc(dp.name)} ищет деньги…</p>`;
+    } else {
+      const who = local ? esc(cp.name) + ': ' : '';
+      if (V.step === 'buy') spot = deedMini(cp.pos);
+      else if (V.card) spot = cardHTML(V.card);
+      else { const last = [...V.log].reverse().find((l) => typeof l === 'string'); spot = `<div class="hint">${esc(last || '')}</div>`; }
+      if (my === cp.id) {
+        if (V.step === 'roll') {
+          h = cp.jail ? `<p class="who">${who}ты в пробке, попытка ${cp.jail} из 3</p>` : `<p class="who">${who}${V.again ? 'дубль, бросай ещё раз!' : 'твой ход'}</p>`;
+          h += btn('Бросить кубики', { type: 'roll' }, 'primary big');
+          if (cp.jail) h += `<div class="btns">${btn('Объехать за ' + DATA.JAIL_FEE, { type: 'payJail' }, '', cp.money < DATA.JAIL_FEE)}${cp.jailCards ? btn('Карта «Объезд»', { type: 'useJailCard' }) : ''}</div>`;
+        } else if (V.step === 'buy') {
+          const c = BOARD[cp.pos], lack = c.price - cp.money;
+          h = (lack > 0 ? `<p>${who}не хватает ${lack}. Заложи что-нибудь или отдай на аукцион.</p>` : '') + `<div class="btns">${btn('Купить за ' + c.price, { type: 'buy' }, 'primary big', lack > 0)}${btn('На аукцион', { type: 'pass' }, 'big')}</div>`;
+        } else h = `<p class="who">${who}можно строить и меняться</p>` + btn('Завершить ход', { type: 'endTurn' }, 'primary big');
+      } else h = `<p>Ходит <span class="who">${esc(cp.name)}</span>${V.step === 'buy' ? ', думает о покупке' : ''}…</p>`;
+    }
+    if (mp && !mp.bankrupt && !V.trade && !V.auction) h += '<button id="btrade" class="ghost">🤝 Предложить обмен</button>';
+  }
+  $('#spot').innerHTML = spot;
+  const tbe = $('#tradebar'); tbe.innerHTML = tb; tbe.classList.toggle('hide', !tb);
+  const A = $('#actions'); A.innerHTML = h; A.classList.remove('busy');
+  A.querySelectorAll('[data-a]').forEach((b) => (b.onclick = () => { const a = JSON.parse(b.dataset.a); act(a.type, a); }));
+  tbe.querySelectorAll('[data-a]').forEach((b) => (b.onclick = () => { const a = JSON.parse(b.dataset.a); act(a.type, a); }));
+  $$('#spot .deed.mini').forEach((d) => (d.onclick = () => openModal(() => cellModal(+d.dataset.cell))));
+  if ($('#btrade')) $('#btrade').onclick = () => { trade = { to: null, give: new Set(), get: new Set() }; openModal(tradeModal); };
+  if ($('#bnew')) $('#bnew').onclick = leave;
+}
+function leave() { if (mode === 'host') { LS.del('km_state_' + code); LS.del('km_last_host'); } V = null; S = null; mode = null; location.hash = ''; location.reload(); }
+function scrollFeed(force) { const l = $('#feedlist'); if (force || l.scrollHeight - l.scrollTop - l.clientHeight < 80) l.scrollTop = l.scrollHeight; }
+function renderFeed() {
+  const l = $('#feedlist'), near = l.scrollHeight - l.scrollTop - l.clientHeight < 80;
+  l.innerHTML = V.log.slice(-60).map((x) => {
+    if (typeof x === 'string') return `<div class="ln">${esc(x)}</div>`;
+    const p = PL(x.c); return `<div class="ln chat ${x.c === myPid ? 'me' : ''}"><b style="color:${p ? tokOf(p.token).color : '#fff'}">${esc(p ? p.name : '?')}</b> ${esc(x.t)}</div>`;
+  }).join('');
+  if (near) l.scrollTop = l.scrollHeight;
+  $('#mini').innerHTML = V.log.slice(-3).map((x) => { if (typeof x === 'string') return `<div>${esc(x)}</div>`; const p = PL(x.c); return `<div class="c"><b>${esc(p ? p.name : '?')}:</b> ${esc(x.t)}</div>`; }).join('');
+}
+function renderGame() { renderBoard(); renderTop(); renderPlayers(); renderStage(); renderFeed(); tickTimer(); }
+function tickTimer() {
+  if (!V || !boardBuilt) return;
+  const bar = $('#timer'), el = $('#players .chip.turn .secs');
+  if (V.phase !== 'play') { bar.classList.add('off'); return; }
+  if (!V.deadline || !V.dur) { bar.classList.add('off'); if (el) el.textContent = ''; return; }
+  const left = Math.max(0, V.deadline - (Date.now() + offset)), secs = Math.ceil(left / 1000), hot = secs <= 10;
+  bar.classList.remove('off'); bar.classList.toggle('hot', hot); bar.firstChild.style.width = Math.min(100, (left / V.dur) * 100) + '%';
+  if (el) { el.textContent = busy ? '' : secs; el.classList.toggle('hot', hot); }
+  if (hot && secs > 0 && secs !== lastTick && !busy && (mode === 'local' || Engine.actor(V) === myPid)) Snd.play('tick');
+  lastTick = secs;
+}
+setInterval(tickTimer, 250);
+
+/* ---------- Окна ---------- */
+function cellModal(i) {
+  const c = BOARD[i], o = V.owner[i], my = me(), h = V.houses[i] || 0;
+  let body = '';
+  if (c.t === 'prop') {
+    const g = GROUPS[c.g], full = o && Engine.ownsGroup(V, o, c.g);
+    const rows = [['Аренда', c.rent[0]], ['Вся группа у одного', c.rent[0] * 2], ['1 точка ▲', c.rent[1]], ['2 точки ▲▲', c.rent[2]], ['3 точки ▲▲▲', c.rent[3]], ['4 точки ▲▲▲▲', c.rent[4]], ['Сеть ★', c.rent[5]]];
+    const curRow = !o || V.mort[i] ? -1 : h ? h + 1 : full ? 1 : 0;
+    body = `<table class="rent">${rows.map((r, k) => `<tr class="${k === curRow ? 'cur' : ''}"><td>${r[0]}</td><td>${r[1]}</td></tr>`).join('')}</table><p class="sub">Постройка стоит ${g.house}, продаётся за ${g.house / 2}. Залог ${c.price / 2}, выкуп ${Engine.unmortCost(i)}.</p>`;
+  } else if (c.t === 'transport') body = `<table class="rent">${[25, 50, 100, 200].map((r, k) => `<tr class="${o && !V.mort[i] && BOARD.filter((x, j) => x.t === 'transport' && V.owner[j] === o).length === k + 1 ? 'cur' : ''}"><td>${k + 1} из 4 у владельца</td><td>${r}</td></tr>`).join('')}</table><p class="sub">Залог ${c.price / 2}, выкуп ${Engine.unmortCost(i)}.</p>`;
+  else if (c.t === 'utility') body = `<p class="sub">Аренда: сумма на кубиках ×4, а если у владельца обе такие клетки, то ×10. Залог ${c.price / 2}, выкуп ${Engine.unmortCost(i)}.</p>`;
+  else if (c.t === 'tax') body = `<p class="sub">Платишь ${c.amount}${V.opt.pot ? ' в общак на парковке' : ' в банк'}.</p>`;
+  else if (c.t === 'card') body = `<p class="sub">${c.deck === 'D' ? 'Тянешь карточку «Движ»: тебя куда-то понесёт.' : 'Тянешь карточку «Сторис»: деньги придут или уйдут.'}</p>`;
+  else if (c.t === 'parking') body = `<p class="sub">${V.opt.pot ? `Здесь копится общак из штрафов. Кто встал, тот забрал. Сейчас в нём ${V.pot}.` : 'Бесплатная стоянка: просто передышка, ничего не происходит.'}</p>`;
+  else body = `<p class="sub">${esc(c.note || '')}</p>`;
+  if (Engine.buyable(c)) {
+    body += `<p style="margin:0">${o ? `Владелец: <b>${esc(PL(o).name)}</b>${V.mort[i] ? ' · заложена, аренды нет' : ''}` : 'Свободна'}</p>`;
+    if (o && o === my && V.phase === 'play') {
+      const b = (label, type, cls) => `<button class="${cls || ''}" data-m="${type}">${label}</button>`, bank = Engine.bank(V);
+      body += `<div class="btns">${c.t === 'prop' && !V.mort[i] && h < 5 ? b(h === 4 ? `Открыть сеть · ${GROUPS[c.g].house}` : `Поставить точку · ${GROUPS[c.g].house}`, 'build', 'primary') : ''}${h ? b(`Продать постройку · +${GROUPS[c.g].house / 2}`, 'sell') : ''}${V.mort[i] ? b(`Выкупить · ${Engine.unmortCost(i)}`, 'unmortgage', 'primary') : !h ? b(`Заложить · +${c.price / 2}`, 'mortgage') : ''}</div>`;
+      if (c.t === 'prop') body += `<p class="sub">В городе осталось точек: ${bank.houses}, сетей: ${bank.hotels}.</p>`;
+    }
+  }
+  $('#modal').innerHTML = `<div class="win"><div class="deed" style="--g:${cellColor(c)}">${deedHead(i)}</div>${body}<button class="ghost" id="mclose">Закрыть</button></div>`;
+  $('#mclose').onclick = closeModal;
+  $('#modal').querySelectorAll('[data-m]').forEach((b) => (b.onclick = () => act(b.dataset.m, { cell: i })));
+}
+function playerModal(pid) {
+  const p = PL(pid), my = me(); if (!p) return closeModal();
+  const props = BOARD.map((c, i) => i).filter((i) => V.owner[i] === pid);
+  const list = props.map((i) => { const c = BOARD[i], h = V.houses[i]; return `<span class="chipx ${V.mort[i] ? 'm' : ''}" data-cell="${i}"><i style="background:${cellColor(c)}"></i>${esc(c.name)}${h ? ' ' + (h === 5 ? '★' : '▲' + h) : ''}</span>`; }).join('') || '<span class="sub">Пока ничего не купил</span>';
+  $('#modal').innerHTML = `<div class="win"><div class="pl" style="background:none;padding:0">${tokHTML(tokOf(p.token))}<span class="nm2"><h2 style="font-size:20px">${esc(p.name)}</h2><small>${tokOf(p.token).name}</small></span></div>
+    <div class="deed"><div class="dstats"><span>Деньги<b>${p.bankrupt ? '—' : p.money}</b></span><span>Капитал<b>${p.bankrupt ? 0 : Engine.netWorth(V, p)}</b></span><span>Клеток<b>${props.length}</b></span></div></div>
+    <div>${list}</div>
+    <div class="btns">${my && my !== pid && !p.bankrupt && PL(my) && !PL(my).bankrupt && V.phase === 'play' && !V.trade && !V.auction ? '<button class="primary" id="ptrade">🤝 Предложить обмен</button>' : ''}<button class="ghost" id="mclose">Закрыть</button></div></div>`;
+  $('#mclose').onclick = closeModal;
+  $('#modal').querySelectorAll('[data-cell]').forEach((b) => (b.onclick = () => openModal(() => cellModal(+b.dataset.cell))));
+  if ($('#ptrade')) $('#ptrade').onclick = () => { trade = { to: pid, give: new Set(), get: new Set() }; openModal(tradeModal); };
+}
+let trade = null;
+function tradeModal() {
+  const my = me(), mp = PL(my);
+  if (!mp || V.phase !== 'play') return closeModal();
+  const others = V.players.filter((p) => !p.bankrupt && p.id !== my);
+  if (!trade.to || !others.find((p) => p.id === trade.to)) trade.to = others[0] && others[0].id;
+  const chips = (pid, set, key) => BOARD.map((c, i) => (V.owner[i] === pid ? `<span class="chipx ${set.has(i) ? 'on' : ''}" data-${key}="${i}"><i style="background:${cellColor(c)}"></i>${esc(c.name)}${V.mort[i] ? ' (залог)' : ''}</span>` : '')).join('') || '<span class="sub">нет клеток</span>';
+  const gm = $('#tgm') ? $('#tgm').value : '', wm = $('#twm') ? $('#twm').value : '';
+  $('#modal').innerHTML = `<div class="win"><h2>🤝 Обмен</h2>
+    <div class="btns">${others.map((p) => `<button class="sm ${p.id === trade.to ? 'primary' : ''}" data-to="${p.id}">${esc(p.name)}</button>`).join('')}</div>
+    <b>Ты отдаёшь</b><div>${chips(my, trade.give, 'g')}</div><input id="tgm" type="number" min="0" inputmode="numeric" placeholder="Доплата от тебя (у тебя ${mp.money})" value="${esc(gm)}">
+    <b>Ты получаешь</b><div>${chips(trade.to, trade.get, 'w')}</div><input id="twm" type="number" min="0" inputmode="numeric" placeholder="Доплата тебе" value="${esc(wm)}">
+    <div class="btns"><button class="primary" id="tsend">Предложить</button><button class="ghost" id="mclose">Отмена</button></div></div>`;
+  $('#mclose').onclick = closeModal;
+  $('#modal').querySelectorAll('[data-to]').forEach((b) => (b.onclick = () => { trade.to = b.dataset.to; trade.get.clear(); tradeModal(); }));
+  const tog = (set, v) => { v = +v; set.has(v) ? set.delete(v) : set.add(v); tradeModal(); };
+  $('#modal').querySelectorAll('[data-g]').forEach((b) => (b.onclick = () => tog(trade.give, b.dataset.g)));
+  $('#modal').querySelectorAll('[data-w]').forEach((b) => (b.onclick = () => tog(trade.get, b.dataset.w)));
+  $('#tsend').onclick = () => { act('proposeTrade', { pid: my, to: trade.to, give: [...trade.give], get: [...trade.get], giveMoney: +$('#tgm').value || 0, getMoney: +$('#twm').value || 0 }); closeModal(); };
+}
+function menuModal() {
+  const my = me(), mp = PL(my), playing = V && V.phase === 'play';
+  $('#modal').innerHTML = `<div class="win"><h2>Меню</h2>
+    <button id="msnd">${Snd.on ? 'Выключить звук' : 'Включить звук'}</button>
+    ${mode !== 'local' ? '<button id="mlink">Скопировать ссылку на комнату</button>' : ''}
+    <button id="mrules">Правила</button>
+    ${isHost() && playing ? `<button id="mskip">Пропустить ход игрока ${esc(V.players[V.turn].name)}</button><button class="danger" id="mfin">Закончить игру и подсчитать капитал</button>` : ''}
+    ${playing && mp && !mp.bankrupt ? '<button class="danger" id="mgive">Сдаться</button>' : ''}
+    <button class="ghost" id="mexit">Выйти в главное меню</button><button class="ghost" id="mclose">Закрыть</button></div>`;
+  $('#mclose').onclick = closeModal;
+  $('#msnd').onclick = () => { Snd.toggle(); renderTop(); menuModal(); };
+  $('#mrules').onclick = () => openModal(rulesModal);
+  if ($('#mlink')) $('#mlink').onclick = copyLink;
+  const twice = (b, fn) => { if (b.dataset.sure) { fn(); closeModal(); } else { b.dataset.sure = 1; b.textContent = 'Точно? Нажми ещё раз'; } };
+  if ($('#mskip')) $('#mskip').onclick = () => { act('hostSkip', { pid: V.hostId }); closeModal(); };
+  if ($('#mfin')) $('#mfin').onclick = (e) => twice(e.target, () => act('finishGame', { pid: V.hostId }));
+  if ($('#mgive')) $('#mgive').onclick = (e) => twice(e.target, () => act('bankrupt'));
+  $('#mexit').onclick = (e) => twice(e.target, () => { location.hash = ''; mode = null; location.reload(); });
+}
+const RULES = [
+  ['dice', '#4263eb', 'Ход', 'Бросаешь два кубика и едешь по кругу. Дубль даёт ещё один бросок, три дубля подряд отправляют в пробку. За каждый круг через Площадь Победы получаешь 200.'],
+  ['house', '#2aa566', 'Покупка и аукцион', 'Встал на свободную клетку — можешь купить её по цене. Отказался или не хватает денег — клетка уходит на аукцион между всеми игроками, включая тебя.'],
+  ['coins', '#e5484d', 'Аренда', 'Встал на чужую клетку — платишь владельцу. Транспорт: 25, 50, 100 или 200, смотря сколько его у владельца. Комбинат и маяк: сумма на кубиках ×4, а если оба у одного, то ×10.'],
+  ['cathedral', '#f08530', 'Группы и постройки', 'Собрал все клетки одного цвета — аренда без построек удваивается и можно ставить точки: до четырёх, потом сеть ★. Строить нужно равномерно. Точек в городе всего 32, сетей 12: кончились — жди, пока кто-то продаст.'],
+  ['key', '#5b6b8c', 'Залог', 'Нужны деньги — заложи клетку за половину цены. Аренду она не приносит. Выкуп стоит залог плюс 10%. Постройки банк берёт обратно за полцены.'],
+  ['swap', '#e0569f', 'Обмен', 'В любой момент можно предложить другому игроку клетки и деньги. За каждую полученную заложенную клетку сразу платишь банку 10% её залога.'],
+  ['jam', '#2a3b5f', 'Пробка', 'Клетка «Мост развели», три дубля подряд или карточка ставят тебя в пробку на Эстакадном мосту. Выехать: выбросить дубль, заплатить 50 или сыграть карту «Объезд». На третьей попытке платишь 50 и едешь.'],
+  ['deckD', '#7357e8', 'Движ и Сторис', 'Карточки «Движ» куда-то тебя везут, «Сторис» приносят или забирают деньги. Все они про нашу компанию.'],
+  ['timer', '#0f9b94', 'Таймер', 'На каждое решение есть время. Не успел — игра сама бросит кубики, откажется от покупки (клетка уйдёт на аукцион) или спасует на аукционе.'],
+  ['ball', '#dba514', 'Мячик и общак', 'Мячик Челси лежит на случайной клетке: встал на неё — получи +50, мячик улетает дальше. Общак на парковке — домашнее правило, его включает создатель комнаты: тогда штрафы копятся и достаются тому, кто встал на парковку.'],
+  ['crown', '#a9683f', 'Победа', 'Нечем платить и нечего продать — банкрот: всё уходит тому, кому должен. Последний оставшийся забирает Калининград.'],
+];
+function rulesModal() {
+  $('#modal').innerHTML = `<div class="win wide"><h2>Правила</h2>
+    <div class="rules" id="rules">${RULES.map((r) => `<div class="rule" style="--g:${r[1]}"><div class="rpic">${Art.art(r[0])}</div><div class="rtxt"><h3>${r[2]}</h3><p>${r[3]}</p></div></div>`).join('')}</div>
+    <div class="dots" id="rdots">${RULES.map((r, k) => `<i class="${k ? '' : 'on'}"></i>`).join('')}</div>
+    <div class="btns"><button id="rprev" class="ghost">Назад</button><button id="rnext" class="primary">Дальше</button></div></div>`;
+  const el = $('#rules'), idx = () => Math.round(el.scrollLeft / el.clientWidth);
+  const upd = () => { const k = idx(); [...$('#rdots').children].forEach((d, n) => d.classList.toggle('on', n === k)); $('#rnext').textContent = k === RULES.length - 1 ? 'Понятно' : 'Дальше'; };
+  el.onscroll = upd;
+  $('#rprev').onclick = () => el.scrollBy({ left: -el.clientWidth, behavior: 'smooth' });
+  $('#rnext').onclick = () => { if (idx() === RULES.length - 1) closeModal(); else el.scrollBy({ left: el.clientWidth, behavior: 'smooth' }); };
+  modalFn = null;
+}
+
+/* ---------- Старт ---------- */
+$$('.skyslot').forEach((s) => (s.outerHTML = skyline()));
+$('#hname').value = LS.get('km_name') || '';
+$('#hname').oninput = (e) => LS.set('km_name', e.target.value.trim());
+$('#hcode').value = (location.hash || '').replace('#', '').toUpperCase().slice(0, 5);
+$('#bcreate').onclick = () => startHost(randCode());
+$('#bjoin').onclick = () => { const c = $('#hcode').value.trim().toUpperCase(); if (c.length !== 5) return toast('Код комнаты состоит из 5 символов'); startClient(c); };
+$('#blocal').onclick = startLocal;
+$('#brules').onclick = () => openModal(rulesModal);
+(function () {
+  const last = LS.get('km_last_host'), raw = last && LS.get('km_state_' + last);
+  if (!raw) return;
+  let saved = null; try { saved = JSON.parse(raw); } catch (e) {}
+  if (!saved || !saved.opt || saved.phase === 'over') return;
+  const b = $('#bresume'); b.classList.remove('hide'); b.textContent = 'Продолжить мою комнату ' + last;
+  b.onclick = () => startHost(last, saved);
+})();
+window.addEventListener('beforeunload', (e) => { if (mode && V && V.phase === 'play') { e.preventDefault(); e.returnValue = ''; } });
+render();

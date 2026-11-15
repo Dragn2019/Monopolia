@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Кёниг Магнат</title>
+<style>
+:root{--bg:#0d1828;--panel:#15243a;--line:#26395a;--ink:#eef2f8;--mute:#93a4bf;--amber:#f2a93b;--cream:#f7f0e3;--cellink:#1c2433;--bad:#ff6b6b;--good:#4cd08a}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:15px}
+button{font:inherit;color:inherit;cursor:pointer;border:0;border-radius:10px;padding:10px 14px;background:#22365a;transition:transform .08s,background .15s}
+button:hover{background:#2c4575}button:active{transform:scale(.97)}
+button.primary{background:var(--amber);color:#231a00;font-weight:700}button.primary:hover{background:#ffbe57}
+button.ghost{background:transparent;border:1px solid var(--line)}
+button.danger{background:#5a2330}button:disabled{opacity:.45;cursor:not-allowed}
+button.sm{padding:6px 10px;font-size:13px;border-radius:8px}
+input{font:inherit;color:var(--ink);background:#0f1c30;border:1px solid var(--line);border-radius:10px;padding:10px 12px;width:100%}
+input:focus{outline:2px solid var(--amber);outline-offset:1px}
+h1,h2,h3{font-family:Georgia,"Times New Roman",serif;margin:0}
+.hide{display:none!important}
+.tk{display:inline-grid;place-items:center;border-radius:50%;width:30px;height:30px;flex:none;box-shadow:0 0 0 2px #fff,0 2px 6px #0008}
+.tk svg{width:72%;height:72%}
+
+/* Экраны входа */
+.screen{min-height:100%;display:grid;place-items:center;padding:20px}
+.cardbox{width:min(460px,100%);background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:22px;display:grid;gap:14px}
+.logo{font-size:40px;line-height:1;letter-spacing:.5px}.logo b{color:var(--amber);font-style:italic}
+.sub{color:var(--mute);margin:0}
+.row{display:flex;gap:8px;align-items:center}.row>*{flex:1}.row>.fix{flex:none}
+.tokens{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.tokpick{display:flex;flex-direction:column;align-items:center;gap:6px;padding:10px 4px;background:#0f1c30;border:2px solid transparent;font-size:12px}
+.tokpick.sel{border-color:var(--amber)}.tokpick.taken{opacity:.3}
+.plist{display:grid;gap:6px}
+.pl{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:12px;background:#0f1c30;border:1px solid transparent}
+.pl.turn{border-color:var(--amber);background:#1b2b47}.pl.out{opacity:.4}
+.pl .nm2{font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pl .mn{font-variant-numeric:tabular-nums;font-weight:700;color:var(--amber)}
+.pl small{color:var(--mute);display:block;font-weight:400}
+.codebig{font:700 34px/1 ui-monospace,Menlo,monospace;letter-spacing:6px;color:var(--amber);text-align:center}
+
+/* Игра */
+#game{display:grid;grid-template-columns:auto 360px;gap:12px;height:100%;padding:8px;justify-content:center}
+#boardwrap{--bw:min(calc(100vw - 388px),calc(100vh - 16px));width:var(--bw);height:var(--bw);position:relative;container-type:inline-size}
+#board{display:grid;grid-template-columns:repeat(11,1fr);grid-template-rows:repeat(11,1fr);gap:.25cqw;width:100%;height:100%}
+.cell{background:var(--cream);color:var(--cellink);border-radius:.6cqw;position:relative;overflow:hidden;display:flex;flex-direction:column;align-items:center;cursor:pointer;min-width:0}
+.cell .band{width:100%;height:14%;flex:none}
+.cell .ic{font-size:2.1cqw;line-height:1.2}
+.cell .nm{font-size:.98cqw;line-height:1.08;text-align:center;padding:0 .15cqw;font-weight:600;overflow-wrap:anywhere}
+.cell .pr{font-size:.9cqw;color:#6b7280;margin-top:auto;padding-bottom:1.15cqw}
+.cell .own{position:absolute;left:0;right:0;bottom:0;height:10%}
+.cell .hs{position:absolute;top:.3cqw;right:.3cqw;background:#111c;color:#fff;border-radius:1cqw;font-size:1.2cqw;font-weight:700;padding:0 .6cqw;line-height:1.5}
+.cell .ballm{position:absolute;top:22%;left:.3cqw;font-size:1.9cqw;animation:bounce 1s infinite alternate}
+.cell.mort{background:repeating-linear-gradient(45deg,#d9d2c4,#d9d2c4 6px,#c4bcab 6px,#c4bcab 12px)}
+.cell.special{background:#e9dcc0}.cell.here{outline:.35cqw solid var(--amber);z-index:1}
+@keyframes bounce{to{transform:translateY(-18%)}}
+@container (max-width:620px){.cell .nm,.cell .pr{display:none}.cell .ic{font-size:4.6cqw;margin-top:4%}.cell .hs{font-size:2.3cqw}.cell .ballm{font-size:3cqw;top:auto;bottom:14%}}
+#center{grid-column:2/11;grid-row:2/11;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1.6cqw;padding:2cqw;text-align:center;background:radial-gradient(circle at 50% 40%,#1c3152,#101d32);border-radius:1cqw;min-height:0;overflow:hidden}
+#center h1{font-size:5.2cqw;line-height:1}#center h1 b{color:var(--amber);font-style:italic}
+#dice{display:flex;gap:1.4cqw;font-size:10cqw;line-height:1;color:var(--cream)}
+#dice.rolling span{animation:shake .45s}
+@keyframes shake{0%{transform:rotate(0)}25%{transform:rotate(-25deg) scale(1.2)}75%{transform:rotate(25deg) scale(1.2)}100%{transform:rotate(0)}}
+#cardview{background:var(--cream);color:var(--cellink);border-radius:1.4cqw;padding:1.6cqw 2cqw;max-width:86%;font-family:Georgia,serif;font-size:max(12px,1.9cqw);line-height:1.3;box-shadow:0 .6cqw 2cqw #0007;border-top:1cqw solid var(--amber)}
+#cardview.S{border-top-color:#d96aa7}#cardview b{display:block;font-size:.8em;letter-spacing:.1em;text-transform:uppercase;color:#7a6a4a;margin-bottom:.3em;font-family:system-ui,sans-serif}
+#cardview.pop{animation:pop .35s}
+@keyframes pop{from{transform:scale(.6) rotate(-4deg);opacity:0}}
+#potline{font-size:max(11px,1.6cqw);color:var(--mute)}#potline b{color:var(--amber)}
+.tok{position:absolute;width:4.4cqw;height:4.4cqw;margin:-2.2cqw 0 0 -2.2cqw;transition:left .6s cubic-bezier(.3,1.3,.5,1),top .6s cubic-bezier(.3,1.3,.5,1);z-index:3;pointer-events:none}
+.tok .tk{width:100%;height:100%;box-shadow:0 0 0 .35cqw #fff,0 .4cqw 1cqw #000a}
+.tok.active .tk{box-shadow:0 0 0 .35cqw #fff,0 0 0 .8cqw var(--amber),0 .4cqw 1cqw #000a}
+@container (max-width:620px){.tok{width:6cqw;height:6cqw;margin:-3cqw 0 0 -3cqw}}
+#side{display:flex;flex-direction:column;gap:10px;min-height:0;overflow:auto}
+.box{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px}
+#actions{display:grid;gap:8px}#actions .big{font-size:17px;padding:14px}
+#actions p{margin:0;color:var(--mute)}#actions .who{color:var(--ink);font-weight:600}
+.btns{display:flex;gap:8px;flex-wrap:wrap}.btns>*{flex:1}
+#log{font-size:13px;color:var(--mute);display:grid;gap:5px;max-height:240px;overflow:auto}
+#log div:first-child{color:var(--ink)}
+.topbar{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--mute)}
+.topbar b{color:var(--amber);letter-spacing:2px;font-family:ui-monospace,monospace}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--good);flex:none}.dot.off{background:var(--bad)}
+details summary{cursor:pointer;color:var(--mute);font-size:13px}
+.tradebox{border:1px dashed var(--amber);border-radius:12px;padding:10px;display:grid;gap:8px;font-size:14px}
+.chip{display:inline-flex;align-items:center;gap:5px;background:#0f1c30;border:1px solid var(--line);border-radius:20px;padding:4px 9px;font-size:13px;margin:2px;cursor:pointer}
+.chip i{width:9px;height:9px;border-radius:50%;display:inline-block}.chip.on{border-color:var(--amber);background:#33290f}
+
+/* Окна */
+#modal{position:fixed;inset:0;background:#000a;display:grid;place-items:center;padding:14px;z-index:20}
+#modal .win{width:min(440px,100%);max-height:92vh;overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:18px;display:grid;gap:12px}
+.dband{height:14px;border-radius:8px}
+table.rent{width:100%;border-collapse:collapse;font-size:14px}table.rent td{padding:4px 0;border-bottom:1px solid var(--line)}table.rent td:last-child{text-align:right;font-weight:700}
+table.rent tr.cur td{color:var(--amber)}
+#toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:#40202a;border:1px solid var(--bad);color:#fff;padding:10px 16px;border-radius:12px;z-index:30;max-width:90vw;text-align:center}
+.rank{display:grid;gap:8px}.rank .pl:first-child{border-color:var(--amber)}
+
+@media (max-width:900px){
+  html,body{height:auto}
+  #game{grid-template-columns:1fr;height:auto;padding:6px;gap:8px}
+  #boardwrap{--bw:min(calc(100vw - 12px),calc(100vh - 12px));margin:0 auto}
+  #side{overflow:visible}
+  #log{max-height:180px}
+}
+</style>
+</head>
+<body>
+<div id="home" class="screen hide">
+  <div class="cardbox">
+    <div><h1 class="logo">Кёниг <b>Магнат</b></h1><p class="sub">Скупи весь Калининград раньше друзей</p></div>
+    <input id="hname" maxlength="14" placeholder="Твоё имя" autocomplete="off">
+    <button class="primary" id="bcreate">Создать комнату</button>
+    <div class="row"><input id="hcode" maxlength="5" placeholder="Код комнаты" autocomplete="off" style="text-transform:uppercase"><button class="fix" id="bjoin">Войти</button></div>
+    <button class="ghost hide" id="bresume"></button>
+    <button class="ghost" id="blocal">Играть на одном устройстве</button>
+    <button class="ghost sm" id="brules">Правила за минуту</button>
+  </div>
+</div>
+
+<div id="lobby" class="screen hide"><div class="cardbox" id="lobbybox"></div></div>
+
+<div id="game" class="hide">
+  <div id="boardwrap"><div id="board"></div></div>
+  <div id="side">
+    <div class="box topbar" id="topbar"></div>
+    <div class="box" id="actions"></div>
+    <div class="box plist" id="players"></div>
+    <div class="box" id="log"></div>
+  </div>
+</div>
+<div id="modal" class="hide"></div>
+<div id="toast" class="hide"></div>
+
+<script src="peerjs.min.js"></script>
+<script src="data.js"></script>
+<script src="engine.js"></script>
+<script>
+const { BOARD, GROUPS, TOKENS } = DATA;
+const $ = (s) => document.querySelector(s);
+const esc = (t) => String(t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const PREFIX = 'koenig-magnat-';
+const LS = { get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }, del(k) { try { localStorage.removeItem(k); } catch (e) {} } };
+
+let S = null, mode = null, myPid = null, code = null, peer = null, conn = null, online = false, statusText = '';
+const conns = {};
+let lastSeq = -1, lastCard = -1, lastRoll = 0, boardBuilt = false, pickedToken = null;
+
+const tokOf = (id) => TOKENS.find((t) => t.id === id);
+const tokHTML = (t) => `<span class="tk" style="background:${t.color}"><svg viewBox="0 0 24 24" fill="#fff">${t.text ? `<text x="12" y="14.4" text-anchor="middle" font-size="6.4" font-weight="900" fill="#231a00" textLength="20" lengthAdjust="spacingAndGlyphs">${t.text}</text>` : t.svg}</svg></span>`;
+const PL = (id) => S.players.find((p) => p.id === id);
+const isHost = () => mode !== 'client';
+const me = () => (mode === 'local' ? (S && S.phase === 'play' ? Engine.actor(S) : null) : myPid);
+const randId = () => 'p' + Math.random().toString(36).slice(2, 10);
+const randCode = () => Array.from({ length: 5 }, () => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[Math.floor(Math.random() * 32)]).join('');
+
+function toast(m) { const t = $('#toast'); t.textContent = m; t.classList.remove('hide'); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.add('hide'), 2600); }
+function closeModal() { $('#modal').classList.add('hide'); $('#modal').innerHTML = ''; modalFn = null; }
+let modalFn = null;
+function openModal(fn) { modalFn = fn; $('#modal').classList.remove('hide'); fn(); }
+$('#modal').addEventListener('click', (e) => { if (e.target.id === 'modal') closeModal(); });
+
+/* ---------- Действия и сеть ---------- */
+function act(type, extra) {
+  const a = Object.assign({ type }, extra || {});
+  if (!a.pid) a.pid = me();
+  if (mode === 'client') { if (conn && conn.open) conn.send({ t: 'act', a }); else toast('Нет связи с комнатой, переподключаюсь'); return; }
+  const err = Engine.apply(S, a);
+  if (err) return toast(err);
+  changed();
+}
+function changed() {
+  if (mode === 'host') { LS.set('km_state_' + code, JSON.stringify(S)); broadcast(); }
+  render();
+}
+function broadcast() { Object.values(conns).forEach((c) => { if (c.open) c.send({ t: 'state', s: S }); }); }
+const SS = { get(k) { try { return sessionStorage.getItem(k); } catch (e) { return null; } }, set(k, v) { try { sessionStorage.setItem(k, v); } catch (e) {} } };
+// Личность игрока: у создателя своя, у гостей привязана к вкладке, с запасной копией на случай закрытой вкладки
+function pidFor(c, host) {
+  if (host) { let p = LS.get('km_hostpid_' + c); if (!p) { p = randId(); LS.set('km_hostpid_' + c, p); } return p; }
+  let p = SS.get('km_pid_' + c) || LS.get('km_pid_' + c);
+  if (!p) { p = randId(); LS.set('km_pid_' + c, p); }
+  SS.set('km_pid_' + c, p); return p;
+}
+
+function startHost(c, saved) {
+  mode = 'host'; code = c; myPid = pidFor(c, true); LS.set('km_last_host', c);
+  S = saved || Engine.newGame(myPid);
+  S.players.forEach((p) => (p.on = p.id === myPid));
+  location.hash = c;
+  statusText = 'Открываю комнату…';
+  let tries = 0;
+  const open = () => {
+    peer = new Peer(PREFIX + c);
+    peer.on('open', () => { online = true; statusText = ''; render(); });
+    peer.on('connection', (cn) => {
+      cn.on('data', (m) => hostMsg(cn, m));
+      cn.on('close', () => { if (cn.pid && conns[cn.pid] === cn) { delete conns[cn.pid]; const p = PL(cn.pid); if (p) p.on = false; changed(); } });
+    });
+    peer.on('disconnected', () => { online = false; render(); setTimeout(() => { if (peer && !peer.destroyed) peer.reconnect(); }, 1500); });
+    peer.on('error', (e) => {
+      if (e.type === 'unavailable-id' && tries++ < 15) { statusText = 'Жду, пока освободится код комнаты…'; render(); peer.destroy(); setTimeout(open, 2000); }
+      else if (e.type !== 'peer-unavailable') { online = false; statusText = 'Проблема со связью: ' + e.type; render(); }
+    });
+  };
+  open(); render();
+}
+function hostMsg(cn, m) {
+  if (m.t === 'hello') {
+    let pid = m.pid;
+    if (pid === myPid || (conns[pid] && conns[pid] !== cn && conns[pid].open)) return cn.send({ t: 'newid' });
+    if (S.phase !== 'lobby' && !PL(pid) && m.name) {
+      const p = S.players.find((x) => !x.on && x.id !== myPid && x.name.toLowerCase() === String(m.name).toLowerCase());
+      if (p) { pid = p.id; cn.send({ t: 'you', pid }); }
+    }
+    cn.pid = pid; conns[pid] = cn;
+    const p = PL(pid); if (p) p.on = true;
+    changed();
+    if (!p) cn.send({ t: 'state', s: S });
+  } else if (m.t === 'act' && cn.pid) {
+    const a = m.a; a.pid = cn.pid;
+    if (a.type === 'start' || a.type === 'finishGame' || a.type === 'hostSkip') return;
+    const err = Engine.apply(S, a);
+    if (err) cn.send({ t: 'err', m: err }); else changed();
+  }
+}
+function startClient(c) {
+  mode = 'client'; code = c; myPid = pidFor(c); location.hash = c;
+  statusText = 'Подключаюсь к комнате ' + c + '…'; S = null; render();
+  peer = new Peer();
+  const connect = () => {
+    if (!peer || peer.destroyed) return;
+    conn = peer.connect(PREFIX + c, { reliable: true });
+    conn.on('open', () => { online = true; statusText = ''; conn.send({ t: 'hello', pid: myPid, name: LS.get('km_name') || '' }); render(); });
+    conn.on('data', (m) => {
+      if (m.t === 'state') { S = m.s; render(); }
+      else if (m.t === 'err') toast(m.m);
+      else if (m.t === 'you') { myPid = m.pid; SS.set('km_pid_' + c, myPid); LS.set('km_pid_' + c, myPid); }
+      else if (m.t === 'newid') { myPid = randId(); SS.set('km_pid_' + c, myPid); conn.send({ t: 'hello', pid: myPid, name: '' }); }
+    });
+    conn.on('close', () => { online = false; statusText = 'Связь потеряна, переподключаюсь…'; render(); setTimeout(connect, 2000); });
+  };
+  peer.on('open', connect);
+  peer.on('disconnected', () => setTimeout(() => { if (peer && !peer.destroyed) peer.reconnect(); }, 1500));
+  peer.on('error', (e) => {
+    if (e.type === 'peer-unavailable') { statusText = 'Комната ' + c + ' пока не отвечает. Создатель должен держать вкладку открытой. Пробую ещё…'; render(); setTimeout(connect, 3000); }
+    else { statusText = 'Проблема со связью: ' + e.type; render(); }
+  });
+}
+function startLocal() { mode = 'local'; myPid = null; S = Engine.newGame('local'); render(); }
+
+/* ---------- Экраны ---------- */
+function render() {
+  const show = (id) => ['home', 'lobby', 'game'].forEach((x) => $('#' + x).classList.toggle('hide', x !== id));
+  if (!mode) return show('home');
+  if (!S || S.phase === 'lobby') { show('lobby'); return renderLobby(); }
+  show('game'); renderGame();
+  if (modalFn) modalFn();
+}
+function renderLobby() {
+  const box = $('#lobbybox');
+  if (!S) { box.innerHTML = `<h2>Комната ${esc(code)}</h2><p class="sub">${esc(statusText)}</p><button class="ghost" onclick="location.hash='';location.reload()">Назад</button>`; return; }
+  const mine = mode === 'local' ? null : PL(myPid);
+  const taken = (t) => S.players.some((p) => p.token === t && p.id !== (mine && mine.id));
+  if (!pickedToken || taken(pickedToken)) pickedToken = mine ? mine.token : (TOKENS.find((t) => !taken(t.id)) || {}).id;
+  const link = location.origin + location.pathname + '#' + code;
+  const hadFocus = document.activeElement && document.activeElement.id === 'lname';
+  const nameVal = document.activeElement && document.activeElement.id === 'lname' ? $('#lname').value : (mine ? mine.name : mode === 'local' ? '' : LS.get('km_name') || '');
+  box.innerHTML = `
+    ${mode === 'local' ? '<h2>Игра на одном устройстве</h2><p class="sub">Добавьте игроков по очереди и передавайте телефон по кругу</p>' : `
+      <p class="sub">Код комнаты</p><div class="codebig">${esc(code)}</div>
+      <div class="row"><input readonly value="${esc(link)}" id="llink"><button class="fix" id="bcopy">Копировать</button></div>
+      ${statusText ? `<p class="sub">${esc(statusText)}</p>` : ''}`}
+    <div class="plist">${S.players.map((p) => `<div class="pl">${tokHTML(tokOf(p.token))}<span class="nm2">${esc(p.name)}${p.id === S.hostId ? ' <small>создатель</small>' : ''}</span>${mode === 'local' ? `<button class="sm ghost" data-rm="${p.id}">убрать</button>` : `<span class="dot ${p.on ? '' : 'off'}"></span>`}</div>`).join('') || '<p class="sub">Пока никого</p>'}</div>
+    <input id="lname" maxlength="14" placeholder="${mode === 'local' ? 'Имя игрока' : 'Твоё имя'}" value="${esc(nameVal)}" autocomplete="off">
+    <div class="tokens">${TOKENS.map((t) => `<button class="tokpick ${pickedToken === t.id ? 'sel' : ''} ${taken(t.id) ? 'taken' : ''}" data-tok="${t.id}">${tokHTML(t)}${esc(t.name)}</button>`).join('')}</div>
+    <button id="bset" class="${mine ? '' : 'primary'}">${mode === 'local' ? 'Добавить игрока' : mine ? 'Сохранить имя и фишку' : 'Сесть за стол'}</button>
+    ${isHost() ? `<button class="primary" id="bstart" ${S.players.length < 2 ? 'disabled' : ''}>Начать игру (${S.players.length}/6)</button>` : '<p class="sub">Ждём, пока создатель комнаты начнёт игру</p>'}`;
+  if (hadFocus) { const i = $('#lname'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }
+  box.querySelectorAll('[data-tok]').forEach((b) => (b.onclick = () => { if (!taken(b.dataset.tok)) { pickedToken = b.dataset.tok; renderLobby(); } }));
+  box.querySelectorAll('[data-rm]').forEach((b) => (b.onclick = () => act('leave', { pid: b.dataset.rm })));
+  $('#bset').onclick = () => {
+    const name = $('#lname').value.trim();
+    if (mode !== 'local') LS.set('km_name', name);
+    act('join', { pid: mode === 'local' ? randId() : myPid, name, token: pickedToken });
+    if (mode === 'local') { $('#lname').value = ''; pickedToken = null; renderLobby(); }
+  };
+  if ($('#bstart')) $('#bstart').onclick = () => act('start', { pid: S.hostId });
+  if ($('#bcopy')) $('#bcopy').onclick = () => { const i = $('#llink'); i.select(); (navigator.clipboard ? navigator.clipboard.writeText(i.value) : Promise.reject()).catch(() => document.execCommand('copy')); toast('Ссылка скопирована, кидай друзьям'); };
+}
+
+/* ---------- Доска ---------- */
+function cellRC(i) { if (i <= 10) return [10, 10 - i]; if (i < 20) return [20 - i, 0]; if (i <= 30) return [0, i - 20]; return [i - 30, 10]; }
+function buildBoard() {
+  const b = $('#board'); b.innerHTML = '';
+  BOARD.forEach((c, i) => {
+    const [r, col] = cellRC(i), d = document.createElement('div');
+    d.className = 'cell' + (Engine.buyable(c) ? '' : ' special'); d.id = 'c' + i;
+    d.style.gridRow = r + 1; d.style.gridColumn = col + 1;
+    const band = c.t === 'prop' ? GROUPS[c.g].color : c.t === 'transport' ? '#3b4252' : c.t === 'utility' ? '#8d99ae' : 'transparent';
+    d.innerHTML = `<div class="band" style="background:${band}"></div><div class="ic">${c.icon}</div><div class="nm">${esc(c.name)}</div>${c.price ? `<div class="pr">${c.price}</div>` : c.amount ? `<div class="pr">−${c.amount}</div>` : ''}<div class="own"></div>`;
+    d.onclick = () => openModal(() => cellModal(i));
+    b.appendChild(d);
+  });
+  const ce = document.createElement('div'); ce.id = 'center';
+  ce.innerHTML = '<h1>Кёниг <b>Магнат</b></h1><div id="dice"><span>⚀</span><span>⚀</span></div><div id="cardview" class="hide"></div><div id="potline"></div>';
+  b.appendChild(ce);
+  boardBuilt = true;
+}
+function renderBoard() {
+  if (!boardBuilt) buildBoard();
+  const wrap = $('#boardwrap'), actor = Engine.actor(S);
+  BOARD.forEach((c, i) => {
+    const d = $('#c' + i), o = S.owner[i];
+    d.classList.toggle('mort', !!S.mort[i]);
+    d.classList.toggle('here', S.phase === 'play' && PL(actor) && PL(actor).pos === i && !S.auction);
+    d.querySelector('.own').style.background = o ? tokOf(PL(o).token).color : 'transparent';
+    let hs = d.querySelector('.hs'); const h = S.houses[i];
+    if (h) { if (!hs) { hs = document.createElement('div'); hs.className = 'hs'; d.appendChild(hs); } hs.textContent = h === 5 ? '★' : h; } else if (hs) hs.remove();
+    let bm = d.querySelector('.ballm');
+    if (S.ball === i) { if (!bm) { bm = document.createElement('div'); bm.className = 'ballm'; bm.textContent = '🎾'; d.appendChild(bm); } } else if (bm) bm.remove();
+  });
+  S.players.forEach((p) => {
+    let t = document.getElementById('t_' + p.id);
+    if (!t) { t = document.createElement('div'); t.className = 'tok'; t.id = 't_' + p.id; t.innerHTML = tokHTML(tokOf(p.token)); wrap.appendChild(t); }
+    t.classList.toggle('hide', p.bankrupt);
+    t.classList.toggle('active', p.id === actor);
+    const same = S.players.filter((x) => !x.bankrupt && x.pos === p.pos), k = same.indexOf(p), n = same.length;
+    const [r, c] = cellRC(p.pos);
+    const dx = n > 1 ? ((k % 3) - (Math.min(n, 3) - 1) / 2) * 2.6 : 0, dy = n > 3 ? (Math.floor(k / 3) - 0.5) * 3 : 0;
+    t.style.left = ((c + 0.5) / 11) * 100 + dx + '%'; t.style.top = ((r + 0.55) / 11) * 100 + dy + '%';
+  });
+  if (S.dice[0]) {
+    const el = $('#dice'); el.innerHTML = S.dice.map((n) => `<span>${'⚀⚁⚂⚃⚄⚅'[n - 1]}</span>`).join('');
+    if (S.rolls !== lastRoll) { el.classList.remove('rolling'); void el.offsetWidth; el.classList.add('rolling'); lastRoll = S.rolls; }
+  }
+  const cv = $('#cardview');
+  if (S.card) {
+    cv.className = S.card.deck; cv.innerHTML = `<b>${S.card.deck === 'D' ? 'Движ' : 'Сторис'}</b>${esc(S.card.text)}`;
+    if (S.card.n !== lastCard) { cv.classList.add('pop'); lastCard = S.card.n; }
+  } else cv.className = 'hide';
+  $('#potline').innerHTML = `Общак на парковке: <b>${S.pot}</b> · мячик Челси 🎾 даёт +${DATA.BALL_BONUS}`;
+}
+
+/* ---------- Панель ---------- */
+function renderGame() {
+  renderBoard();
+  const my = me(), actor = Engine.actor(S), cp = S.players[S.turn];
+  $('#topbar').innerHTML = mode === 'local' ? '<span>Игра на одном устройстве</span>' : `<span class="dot ${online ? '' : 'off'}"></span><span>Комната <b>${esc(code)}</b></span><span style="flex:1">${esc(statusText)}</span>`;
+  $('#players').innerHTML = S.players.map((p) => {
+    const props = BOARD.filter((c, i) => S.owner[i] === p.id).length;
+    return `<div class="pl ${p.id === actor ? 'turn' : ''} ${p.bankrupt ? 'out' : ''}">${tokHTML(tokOf(p.token))}<span class="nm2">${esc(p.name)}${p.id === my && mode !== 'local' ? ' (ты)' : ''}<small>${p.bankrupt ? 'банкрот' : `${props} кл.${p.jail ? ' · в пробке' : ''}${p.jailCards ? ' · объезд ×' + p.jailCards : ''}${mode !== 'local' && !p.on ? ' · не в сети' : ''}`}</small></span><span class="mn">${p.bankrupt ? '—' : p.money}</span></div>`;
+  }).join('');
+  $('#log').innerHTML = S.log.slice(-40).reverse().map((l) => `<div>${esc(l)}</div>`).join('');
+
+  const A = $('#actions'); let h = '';
+  const btn = (label, a, cls, dis) => `<button class="${cls || ''}" ${dis ? 'disabled' : ''} data-a='${esc(JSON.stringify(a))}'>${label}</button>`;
+  if (S.phase === 'over') {
+    h = `<h3>Игра окончена</h3><div class="rank">${S.final.map((f, k) => { const p = PL(f.id); return `<div class="pl">${tokHTML(tokOf(p.token))}<span class="nm2">${k + 1}. ${esc(p.name)}</span><span class="mn">${f.worth}</span></div>`; }).join('')}</div><p>Капитал: деньги, клетки и постройки</p><button class="primary" id="bnew">Новая игра</button>`;
+  } else {
+    const mp = PL(my);
+    if (S.trade) {
+      const t = S.trade, f = PL(t.from), to = PL(t.to), names = (l) => l.map((i) => '«' + esc(BOARD[i].name) + '»').join(', ');
+      const side = (l, m) => [names(l), m ? m + ' денег' : ''].filter(Boolean).join(' + ') || 'ничего';
+      h += `<div class="tradebox"><b>Обмен: ${esc(f.name)} → ${esc(to.name)}</b><span>Отдаёт: ${side(t.give, t.giveMoney)}</span><span>Хочет: ${side(t.get, t.getMoney)}</span><div class="btns">${
+        mode === 'local' || my === t.to ? btn('Согласиться', { type: 'acceptTrade', pid: t.to }, 'primary') + btn('Отказаться', { type: 'rejectTrade', pid: t.to }) : my === t.from ? btn('Отменить', { type: 'rejectTrade' }) : ''}</div></div>`;
+    }
+    if (S.auction) {
+      const au = S.auction, c = BOARD[au.cell], ap = PL(actor);
+      h += `<h3>Аукцион: ${c.icon} ${esc(c.name)}</h3><p>Ставка: <span class="who">${au.bid || 'нет'}</span>${au.bidder ? ' от ' + esc(PL(au.bidder).name) : ''} · цена по каталогу ${c.price}</p>`;
+      if (my === actor) {
+        h += `<p class="who">${mode === 'local' ? esc(ap.name) + ', твоя ставка' : 'Твоя ставка'} (у тебя ${ap.money})</p><div class="btns">${[10, 50, 100].map((d) => btn('+' + d, { type: 'bid', amount: au.bid + d }, 'primary', ap.money < au.bid + d)).join('')}${btn('Пас', { type: 'auctionPass' })}</div>`;
+      } else h += `<p>Ставит ${esc(ap.name)}…</p>`;
+    } else if (S.debt) {
+      const d = S.debt, dp = PL(d.pid);
+      if (my === d.pid) h += `<h3>${mode === 'local' ? esc(dp.name) + ': не' : 'Не'} хватает денег</h3><p>Нужно <span class="who">${d.amount}</span>, есть ${dp.money}. Нажимай на свои клетки, чтобы продать постройки или заложить их, либо предложи обмен.</p><div class="btns">${btn('Заплатить ' + d.amount, { type: 'payDebt' }, 'primary big', dp.money < d.amount)}${btn('Сдаться', { type: 'bankrupt' }, 'danger')}</div>`;
+      else h += `<p>${esc(dp.name)} ищет ${d.amount}, чтобы расплатиться…</p>`;
+    } else if (my === cp.id) {
+      const who = mode === 'local' ? esc(cp.name) + ': ' : '';
+      if (S.step === 'roll') {
+        h += cp.jail ? `<p class="who">${who}ты в пробке, попытка ${cp.jail} из 3. Выбрось дубль или заплати.</p>` : `<p class="who">${who}${S.again ? 'дубль, бросай ещё раз!' : 'твой ход'}</p>`;
+        h += btn('🎲 Бросить кубики', { type: 'roll' }, 'primary big');
+        if (cp.jail) h += `<div class="btns">${btn('Объехать за ' + DATA.JAIL_FEE, { type: 'payJail' }, '', cp.money < DATA.JAIL_FEE)}${cp.jailCards ? btn('Карта «Объезд»', { type: 'useJailCard' }) : ''}</div>`;
+      } else if (S.step === 'buy') {
+        const c = BOARD[cp.pos];
+        h += `<p class="who">${who}${c.icon} ${esc(c.name)} свободна</p><div class="btns">${btn('Купить за ' + c.price, { type: 'buy' }, 'primary big', cp.money < c.price)}${btn('На аукцион', { type: 'pass' }, 'big')}</div>`;
+      } else h += `<p class="who">${who}можно строить, меняться или закончить ход</p>` + btn('Завершить ход', { type: 'endTurn' }, 'primary big');
+    } else h += `<p>Ходит <span class="who">${esc(cp.name)}</span>…</p>`;
+    if (mp && !mp.bankrupt) h += `<div class="btns">${!S.trade && !S.auction ? '<button id="btrade">🤝 Обмен</button>' : ''}<button id="brules2" class="ghost">Правила</button></div>`;
+    if (isHost()) h += `<details><summary>Управление комнатой</summary><div class="btns" style="margin-top:8px">${btn('Пропустить ход ' + esc(cp.name), { type: 'hostSkip', pid: S.hostId }, 'sm')}${btn('Закончить и подсчитать', { type: 'finishGame', pid: S.hostId }, 'sm danger')}</div></details>`;
+  }
+  A.innerHTML = h;
+  A.querySelectorAll('[data-a]').forEach((b) => (b.onclick = () => { const a = JSON.parse(b.dataset.a); if (a.type === 'finishGame' && !confirmTwice(b)) return; act(a.type, a); }));
+  if ($('#btrade')) $('#btrade').onclick = () => { trade = { to: null, give: new Set(), get: new Set() }; openModal(tradeModal); };
+  if ($('#brules2')) $('#brules2').onclick = () => openModal(rulesModal);
+  if ($('#bnew')) $('#bnew').onclick = () => { if (mode === 'host') { LS.del('km_state_' + code); LS.del('km_last_host'); } location.hash = ''; location.reload(); };
+}
+function confirmTwice(b) { if (b.dataset.sure) return true; b.dataset.sure = 1; b.textContent = 'Точно закончить? Нажми ещё раз'; return false; }
+
+/* ---------- Окна ---------- */
+function cellModal(i) {
+  const c = BOARD[i], o = S.owner[i], my = me(), h = S.houses[i] || 0;
+  let body = '';
+  if (c.t === 'prop') {
+    const g = GROUPS[c.g], full = o && Engine.ownsGroup(S, o, c.g);
+    const rows = [['Аренда', c.rent[0]], ['Вся группа у одного', c.rent[0] * 2], ['1 точка', c.rent[1]], ['2 точки', c.rent[2]], ['3 точки', c.rent[3]], ['4 точки', c.rent[4]], ['Сеть ★', c.rent[5]]];
+    const curRow = !o || S.mort[i] ? -1 : h ? h + 1 : full ? 1 : 0;
+    body = `<p class="sub">Группа «${esc(g.name)}» · цена ${c.price} · постройка ${g.house}</p><table class="rent">${rows.map((r, k) => `<tr class="${k === curRow ? 'cur' : ''}"><td>${r[0]}</td><td>${r[1]}</td></tr>`).join('')}</table>`;
+  } else if (c.t === 'transport') body = `<p class="sub">Транспорт · цена ${c.price}</p><table class="rent">${[25, 50, 100, 200].map((r, k) => `<tr><td>${k + 1} из 4 у владельца</td><td>${r}</td></tr>`).join('')}</table>`;
+  else if (c.t === 'utility') body = `<p class="sub">Цена ${c.price}. Аренда: сумма на кубиках ×4, а если у владельца обе такие клетки, то ×10.</p>`;
+  else if (c.t === 'tax') body = `<p class="sub">Платишь ${c.amount} в общак на парковке.</p>`;
+  else if (c.t === 'card') body = `<p class="sub">${c.deck === 'D' ? 'Тянешь карточку «Движ»: тебя куда-то понесёт.' : 'Тянешь карточку «Сторис»: деньги придут или уйдут.'}</p>`;
+  else body = `<p class="sub">${esc(c.note || '')}</p>`;
+  if (Engine.buyable(c)) {
+    body += `<p>${o ? `Владелец: <b>${esc(PL(o).name)}</b>${S.mort[i] ? ' · заложена, аренды нет' : ''}` : 'Свободна'}</p>`;
+    if (o && o === my && S.phase === 'play') {
+      const b = (label, type, cls) => `<button class="${cls || ''}" data-m="${type}">${label}</button>`;
+      body += `<div class="btns">${c.t === 'prop' && !S.mort[i] ? b(h === 4 ? `Открыть сеть (${GROUPS[c.g].house})` : `Поставить точку (${GROUPS[c.g].house})`, 'build', 'primary') : ''}${h ? b(`Продать постройку (+${GROUPS[c.g].house / 2})`, 'sell') : ''}${S.mort[i] ? b(`Выкупить (${Engine.unmortCost(i)})`, 'unmortgage', 'primary') : !h ? b(`Заложить (+${c.price / 2})`, 'mortgage') : ''}</div>`;
+    }
+  }
+  $('#modal').innerHTML = `<div class="win"><div class="dband" style="background:${c.t === 'prop' ? GROUPS[c.g].color : '#3b4252'}"></div><h2>${c.icon} ${esc(c.name)}</h2>${body}<button class="ghost" id="mclose">Закрыть</button></div>`;
+  $('#mclose').onclick = closeModal;
+  $('#modal').querySelectorAll('[data-m]').forEach((b) => (b.onclick = () => act(b.dataset.m, { cell: i })));
+}
+let trade = null;
+function tradeModal() {
+  const my = me(), mp = PL(my);
+  if (!mp || S.phase !== 'play') return closeModal();
+  const others = S.players.filter((p) => !p.bankrupt && p.id !== my);
+  if (!trade.to || !others.find((p) => p.id === trade.to)) trade.to = others[0] && others[0].id;
+  const chips = (pid, set, key) => BOARD.map((c, i) => (S.owner[i] === pid ? `<span class="chip ${set.has(i) ? 'on' : ''}" data-${key}="${i}"><i style="background:${c.t === 'prop' ? GROUPS[c.g].color : '#8d99ae'}"></i>${esc(c.name)}</span>` : '')).join('') || '<span class="sub">нет клеток</span>';
+  const gm = $('#tgm') ? $('#tgm').value : '', wm = $('#twm') ? $('#twm').value : '';
+  $('#modal').innerHTML = `<div class="win"><h2>🤝 Обмен</h2>
+    <div class="btns">${others.map((p) => `<button class="sm ${p.id === trade.to ? 'primary' : ''}" data-to="${p.id}">${esc(p.name)}</button>`).join('')}</div>
+    <b>Ты отдаёшь</b><div>${chips(my, trade.give, 'g')}</div><input id="tgm" type="number" min="0" inputmode="numeric" placeholder="Доплата от тебя (у тебя ${mp.money})" value="${esc(gm)}">
+    <b>Ты получаешь</b><div>${chips(trade.to, trade.get, 'w')}</div><input id="twm" type="number" min="0" inputmode="numeric" placeholder="Доплата тебе" value="${esc(wm)}">
+    <div class="btns"><button class="primary" id="tsend">Предложить</button><button class="ghost" id="mclose">Отмена</button></div></div>`;
+  $('#mclose').onclick = closeModal;
+  $('#modal').querySelectorAll('[data-to]').forEach((b) => (b.onclick = () => { trade.to = b.dataset.to; trade.get.clear(); tradeModal(); }));
+  const tog = (set, v) => { v = +v; set.has(v) ? set.delete(v) : set.add(v); tradeModal(); };
+  $('#modal').querySelectorAll('[data-g]').forEach((b) => (b.onclick = () => tog(trade.give, b.dataset.g)));
+  $('#modal').querySelectorAll('[data-w]').forEach((b) => (b.onclick = () => tog(trade.get, b.dataset.w)));
+  $('#tsend').onclick = () => { act('proposeTrade', { pid: my, to: trade.to, give: [...trade.give], get: [...trade.get], giveMoney: +$('#tgm').value || 0, getMoney: +$('#twm').value || 0 }); closeModal(); };
+}
+function rulesModal() {
+  $('#modal').innerHTML = `<div class="win"><h2>Правила за минуту</h2>
+  <p>Бросаешь кубики, едешь по Калининграду и скупаешь места. Встал на чужое, платишь аренду. Остался последним небанкротом, победил.</p>
+  <p><b>Покупка и аукцион.</b> Свободную клетку можно купить. Не хочешь, она уходит на аукцион между всеми, включая тебя.</p>
+  <p><b>Группы и постройки.</b> Собрал все клетки одного цвета, аренда удваивается и можно ставить точки, до четырёх, а потом сеть ★. Строить нужно равномерно.</p>
+  <p><b>Залог.</b> Нет денег? Нажми на свою клетку и заложи её за полцены. Заложенная клетка не приносит аренду.</p>
+  <p><b>Обмен.</b> В любой момент можно предложить другому игроку клетки и деньги.</p>
+  <p><b>Пробка.</b> Клетка «Мост развели», три дубля подряд или карточка отправляют в пробку на Эстакадном. Выехать: дубль, ${DATA.JAIL_FEE} монет или карта «Объезд».</p>
+  <p><b>Общак.</b> Все штрафы копятся на парковке у Дома Советов. Кто встал на неё, забирает всё.</p>
+  <p><b>Мячик Челси 🎾</b> лежит на случайной клетке. Кто встал на неё, получает +${DATA.BALL_BONUS}, а мячик улетает дальше.</p>
+  <p><b>Дубль</b> даёт ещё один бросок. За круг через Площадь Победы получаешь ${DATA.LAP}.</p>
+  <button class="primary" id="mclose">Понятно</button></div>`;
+  $('#mclose').onclick = closeModal;
+}
+
+/* ---------- Старт ---------- */
+$('#hname').value = LS.get('km_name') || '';
+$('#hname').oninput = (e) => LS.set('km_name', e.target.value.trim());
+$('#hcode').value = (location.hash || '').replace('#', '').toUpperCase().slice(0, 5);
+$('#bcreate').onclick = () => startHost(randCode());
+$('#bjoin').onclick = () => { const c = $('#hcode').value.trim().toUpperCase(); if (c.length !== 5) return toast('Код комнаты состоит из 5 символов'); startClient(c); };
+$('#blocal').onclick = startLocal;
+$('#brules').onclick = () => openModal(rulesModal);
+(function () {
+  const last = LS.get('km_last_host'), raw = last && LS.get('km_state_' + last);
+  if (!raw) return;
+  const b = $('#bresume'); b.classList.remove('hide'); b.textContent = 'Продолжить мою комнату ' + last;
+  b.onclick = () => { try { startHost(last, JSON.parse(raw)); } catch (e) { toast('Не получилось восстановить комнату'); } };
+})();
+window.addEventListener('beforeunload', (e) => { if (mode && S && S.phase === 'play') { e.preventDefault(); e.returnValue = ''; } });
+render();
+</script>
+</body>
+</html>

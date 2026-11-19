@@ -1,0 +1,8 @@
+{
+  "name": "koenig-magnat",
+  "private": true,
+  "description": "Кёниг Магнат: игра для друзей и сервер комнат",
+  "scripts": { "start": "node server.js", "test": "node engine.test.js" },
+  "engines": { "node": ">=18" },
+  "dependencies": { "ws": "^8.18.0" }
+}

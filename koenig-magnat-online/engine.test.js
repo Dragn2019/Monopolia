@@ -9,9 +9,9 @@ test('Dollar scale and classic group counts',()=>{assert.equal(D.money(1500),'$1
 test('Solo: chosen dice, purchase, next turn, no auto-win',()=>{const s=game(1);act(s,'roll',{dice:[1,2]});assert.equal(s.players[0].pos,3);act(s,'buy');assert.equal(s.owner[3],s.players[0].id);assert.equal(s.phase,'play');assert.equal(s.step,'roll');});
 test('Chosen dice rejected outside solo and on invalid input',()=>{const s=game();assert.ok(E.apply(s,{type:'roll',pid:E.actor(s),dice:[1,2]}));const t=game(1);assert.ok(E.apply(t,{type:'roll',pid:E.actor(t),dice:[0,7]}));});
 test('Solo auction has no bidders and closes',()=>{const {s}=auction(1);assert.equal(s.auction,null);assert.equal(s.step,'roll');assert.equal(s.owner[3],undefined);});
-test('Auction excludes initiator, starts at price and enforces exact step',()=>{const {s,excluded}=auction();assert.ok(!s.auction.order.includes(excluded));assert.ok(E.apply(s,{type:'bid',pid:excluded,amount:80}));assert.ok(E.apply(s,{type:'bid',pid:E.actor(s),amount:20}));act(s,'bid',{amount:80});assert.ok(E.apply(s,{type:'bid',pid:E.actor(s),amount:120}));act(s,'bid',{amount:100});const winner=s.auction.bidder;act(s,'auctionPass');assert.equal(s.auction,null);assert.equal(s.owner[3],winner);assert.equal(s.players.find(p=>p.id===winner).money,1400);});
+test('Auction excludes initiator, starts at price and enforces exact step',()=>{const {s,excluded}=auction();assert.ok(!s.auction.order.includes(excluded));assert.ok(E.apply(s,{type:'bid',pid:excluded,amount:60}));assert.ok(E.apply(s,{type:'bid',pid:E.actor(s),amount:20}));act(s,'bid',{amount:60});assert.ok(E.apply(s,{type:'bid',pid:E.actor(s),amount:100}));act(s,'bid',{amount:80});const winner=s.auction.bidder;act(s,'auctionPass');assert.equal(s.auction,null);assert.equal(s.owner[3],winner);assert.equal(s.players.find(p=>p.id===winner).money,1420);});
 test('Everyone passes, property remains unowned',()=>{const {s}=auction();while(s.auction)act(s,'auctionPass');assert.equal(s.owner[3],undefined);});
-test('Single eligible bidder must bid the list price',()=>{const {s}=auction(2);act(s,'bid',{amount:80});assert.equal(s.auction,null);assert.ok(s.owner[3]);});
+test('Single eligible bidder must bid the list price',()=>{const {s}=auction(2);act(s,'bid',{amount:60});assert.equal(s.auction,null);assert.ok(s.owner[3]);});
 test('Buildings require whole group and even building/selling',()=>{const s=game(1),pid=E.actor(s);s.owner[1]=pid;assert.ok(E.apply(s,{type:'build',pid,cell:1}));s.owner[3]=pid;act(s,'build',{cell:1});s.built={};assert.ok(E.apply(s,{type:'build',pid,cell:1}));act(s,'build',{cell:3});s.built={};act(s,'build',{cell:1});assert.ok(E.apply(s,{type:'sell',pid,cell:3}));act(s,'sell',{cell:1});assert.equal(s.houses[1],1);assert.equal(s.houses[3],1);});
 test('Mortgage blocks group building and produces zero rent',()=>{const s=game(1),pid=E.actor(s);s.owner[1]=s.owner[3]=pid;act(s,'mortgage',{cell:3});assert.equal(E.rent(s,3,7),0);assert.ok(E.apply(s,{type:'build',pid,cell:1}));act(s,'unmortgage',{cell:3});act(s,'build',{cell:1});assert.ok(E.apply(s,{type:'mortgage',pid,cell:3}));});
 test('Card text remains in shared history and effects apply',()=>{const s=game(1);s.decks.S=[0];act(s,'roll',{dice:[1,1]});const c=s.log.find(x=>x.kind==='card');assert.equal(c.t,D.CARDS.S[0].text);assert.ok(c.t.includes('$'));assert.equal(s.players[0].money,1460);assert.ok(!s.log.some(x=>typeof x==='string'&&x.includes('Баланс')));});
@@ -23,7 +23,7 @@ test('Trade rejected outside current turn',()=>{const s=game(2),other=s.players.
 
 // ---- Пожар ----
 const FIRE = D.CARDS.D.findIndex(c => c.fx.fire), DCELL = D.BOARD.findIndex(c => c.t === 'card' && c.deck === 'D');
-function fireGameSolo(m) { const s = game(3); s.solo = true; const drawer = E.actor(s), owner = s.players.find(p => p.id !== drawer); const cells = E.groupCells(D.BOARD[1].g); cells.forEach(i => { s.owner[i] = owner.id; s.houses[i] = 2; }); s.owner[5] = owner.id; if (m !== undefined) owner.money = m; s.decks.D = [FIRE]; s.players[s.turn].pos = (DCELL - 3 + 40) % 40; act(s, 'roll', { dice: [1, 2] }); return { s, drawer, owner, cells }; }
+function fireGameSolo(m) { const s = game(3); s.solo = true; const drawer = E.actor(s), owner = s.players.find(p => p.id === drawer); const cells = E.groupCells(D.BOARD[1].g); cells.forEach(i => { s.owner[i] = owner.id; s.houses[i] = 2; }); if (m !== undefined) owner.money = m; s.decks.D = [FIRE]; s.players[s.turn].pos = (DCELL - 3 + 40) % 40; act(s, 'roll', { dice: [1, 2] }); return { s, drawer, owner, cells }; }
 test('Fire with no buildings anywhere does nothing and turn moves on', () => {
   const s = game(2); s.solo = true; s.decks.D = [FIRE]; s.players[s.turn].pos = (DCELL - 3 + 40) % 40; const first = E.actor(s);
   act(s, 'roll', { dice: [1, 2] }); assert.equal(s.fire, null); assert.notEqual(E.actor(s), first);
@@ -32,9 +32,10 @@ test('Fire hits a built property and the owner decides', () => {
   const { s, owner, cells } = fireGameSolo();
   assert.ok(s.fire); assert.equal(E.actor(s), owner.id); assert.ok(cells.includes(s.fire.cell));
 });
-test('Owner saves for $30 000 and keeps buildings', () => {
-  const { s, owner, drawer } = fireGameSolo(); const cell = s.fire.cell, before = owner.money;
-  act(s, 'fireSave'); assert.equal(owner.money, before - D.FIRE_COST); assert.equal(s.houses[cell], 2); assert.equal(s.owner[cell], owner.id); assert.equal(s.fire, null); assert.notEqual(E.actor(s), drawer);
+test('Owner saves for half the value (max FIRE_COST) and keeps buildings', () => {
+  const { s, owner, drawer } = fireGameSolo(); const cell = s.fire.cell, before = owner.money, cost = s.fire.cost;
+  assert.equal(cost, Math.min(D.FIRE_COST, (D.BOARD[cell].price + 2 * D.GROUPS[D.BOARD[cell].g].house) / 2));
+  act(s, 'fireSave'); assert.equal(owner.money, before - cost); assert.equal(s.houses[cell], 2); assert.equal(s.owner[cell], owner.id); assert.equal(s.fire, null); assert.notEqual(E.actor(s), drawer);
 });
 test('Owner refuses: buildings demolished, property back to bank, group frozen', () => {
   const { s, owner, cells } = fireGameSolo(); const cell = s.fire.cell, other = cells.find(i => i !== cell);
@@ -42,16 +43,15 @@ test('Owner refuses: buildings demolished, property back to bank, group frozen',
   assert.ok(E.apply(s, { type: 'build', pid: owner.id, cell: other }));
 });
 test('Not enough money: must raise it by mortgaging, then can save', () => {
-  const { s, owner } = fireGameSolo(100); assert.ok(E.apply(s, { type: 'fireSave', pid: owner.id }));
-  act(s, 'mortgage', { cell: 5 }); assert.equal(owner.money, 200); assert.ok(E.apply(s, { type: 'fireSave', pid: owner.id }));
-  owner.money = 300; act(s, 'fireSave'); assert.equal(s.fire, null);
+  const { s, owner } = fireGameSolo(20); s.owner[5] = owner.id; assert.ok(E.apply(s, { type: 'fireSave', pid: owner.id }));
+  act(s, 'mortgage', { cell: 5 }); assert.equal(owner.money, 120); act(s, 'fireSave'); assert.equal(s.fire, null);
 });
 test('While fire is pending others cannot act', () => {
-  const { s, drawer } = fireGameSolo(); assert.ok(E.apply(s, { type: 'proposeTrade', pid: drawer, to: s.fire.pid, giveMoney: 10 })); assert.ok(E.apply(s, { type: 'roll', pid: drawer }));
+  const { s, drawer } = fireGameSolo(); const other = s.players.find(p => p.id !== drawer).id; assert.ok(E.apply(s, { type: 'proposeTrade', pid: other, to: drawer, giveMoney: 10 })); assert.ok(E.apply(s, { type: 'roll', pid: other })); assert.ok(E.apply(s, { type: 'roll', pid: drawer }));
 });
 test('Timeout: saves when affordable, otherwise the property burns', () => {
   const a = fireGameSolo(); const ca = a.s.fire.cell; assert.equal(E.apply(a.s, { type: 'timeout', pid: 'host' }), null); assert.equal(a.s.owner[ca], a.owner.id);
-  const b = fireGameSolo(50); const cb = b.s.fire.cell; assert.equal(E.apply(b.s, { type: 'timeout', pid: 'host' }), null); assert.equal(b.s.owner[cb], undefined);
+  const b = fireGameSolo(20); const cb = b.s.fire.cell; assert.equal(E.apply(b.s, { type: 'timeout', pid: 'host' }), null); assert.equal(b.s.owner[cb], undefined);
 });
 test('Trade: only before rolling, sides within 50%, no mortgage fee',()=>{
   const s=game(2),from=E.actor(s),to=s.players.find(p=>p.id!==from).id; s.owner[1]=from; s.owner[39]=to; s.owner[3]=to; s.mort[3]=true;
@@ -105,5 +105,26 @@ test('Drunk swap only with the lobby option',()=>{
   act(s,'roll',{dice:[1,1]}); assert.ok(!s.decks.S.concat([]).some(k=>D.CARDS.S[k].fx.drunk));
   const s2=game(2),a=s2.players[s2.turn],b=s2.players.find(x=>x!==a); s2.solo=true; s2.opt.drunk=true; s2.owner[39]=a.id; s2.owner[5]=b.id; a.pos=0;
   drawFx(s2,'S',c=>c.fx.drunk); act(s2,'roll',{dice:[1,1]}); assert.equal(s2.owner[39],b.id); assert.equal(s2.owner[5],a.id);
+});
+test('Fire can hit an unbuilt plot: half its price to save',()=>{
+  const s=game(2); s.solo=true; const o=s.players.find(p=>p.id===E.actor(s)); s.owner[39]=o.id; s.decks.D=[FIRE]; s.players[s.turn].pos=(DCELL-3+40)%40;
+  act(s,'roll',{dice:[1,2]}); assert.equal(s.fire.cell,39); assert.equal(s.fire.cost,Math.min(D.FIRE_COST,D.BOARD[39].price/2));
+});
+test('Start pays only the first PAID_LAPS laps',()=>{
+  const s=game(2),p=s.players[s.turn]; s.solo=true; p.laps=D.PAID_LAPS; p.pos=38; s.ball=-1; const m=p.money; act(s,'roll',{dice:[1,2]}); assert.equal(p.laps,D.PAID_LAPS+1); assert.equal(p.money,m);
+});
+test('After a double you may build again in the same group',()=>{
+  const s=game(2),p=s.players[s.turn]; s.solo=true; E.groupCells(1).forEach(i=>s.owner[i]=p.id); const [x,y]=E.groupCells(1);
+  act(s,'build',{cell:x}); assert.ok(E.apply(s,{type:'build',pid:p.id,cell:y}));
+  p.pos=6; act(s,'roll',{dice:[2,2]}); assert.equal(p.pos,10); assert.equal(s.step,'roll'); assert.equal(E.actor(s),p.id);
+  act(s,'build',{cell:y}); assert.equal(s.houses[y],1); assert.ok(E.apply(s,{type:'build',pid:p.id,cell:x}),'still one per group per move');
+});
+test('Third jail turn: pay the fine even on a double',()=>{
+  const s=game(2),p=s.players[s.turn]; s.solo=true; p.jail=3; p.pos=10; s.ball=-1; const m=p.money; act(s,'roll',{dice:[3,3]});
+  if(s.debt) act(s,'payDebt'); assert.equal(p.jail,0); assert.equal(p.money<=m-D.JAIL_FEE||p.pos===16,true); assert.equal(p.pos,16); assert.ok(!s.again);
+});
+test('Fire never hits other players',()=>{
+  const s=game(2); s.solo=true; const other=s.players.find(p=>p.id!==E.actor(s)); s.owner[39]=other.id; s.houses[39]=0; s.decks.D=[FIRE]; s.players[s.turn].pos=(DCELL-3+40)%40;
+  act(s,'roll',{dice:[1,2]}); assert.equal(s.fire,null); assert.equal(s.owner[39],other.id);
 });
 console.log(`${tests} checks passed`);

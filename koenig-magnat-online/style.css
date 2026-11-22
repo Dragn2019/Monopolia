@@ -727,3 +727,35 @@ body>#pickbar{top:auto;bottom:12px}
 #game #board .cell.closed .pic,#game #board .cell.closed .meta{opacity:.45}
 #game #board .cell.closed::after{content:"";position:absolute;inset:0;border-radius:2px;background:repeating-linear-gradient(135deg,#f2b70533 0 8px,transparent 8px 16px);pointer-events:none}
 #game #board .cell.closed .pr.rent{background:#3a4045!important}
+
+/* ===== v10: жирнее фишки и текст, огонь на клетке, всплывающая карточка ===== */
+#game .tok .tk{box-shadow:0 0 0 3.5px var(--tc),0 0 0 5px #fff,0 3px 10px #000c}
+#game .tok.active .tk{box-shadow:0 0 0 3.5px var(--tc),0 0 0 6.5px #fff,0 4px 12px #000d}
+#game .tok .tk svg{width:90%;height:90%}
+#game #board .cell .nm{font-size:clamp(9px,calc(var(--bs) * .0138),13px);font-weight:800;color:#1f2a24;line-height:1.15}
+#game #board .cell .pr{font-weight:800;font-size:clamp(10px,calc(var(--strip) * .64),17px)}
+#game #board .cell[data-kind=start] .cell-type{font-weight:900}
+#game #feedlist{font-size:clamp(14px,1.7vh,16px);line-height:1.5;color:#c3ccd2}
+#game #feedlist .event{color:#aab4bb;font-weight:600}
+#game #feedlist .ln:last-child{color:#fff}
+#game #feedlist .chat{font-weight:600}
+#game #feedlist .card-event{font-weight:600;color:#ddd6f3}
+#game .chip .nm2{font-weight:800}
+#game #actions p{font-size:14px;font-weight:600}
+/* Горящее поле */
+#game #board .cell.burning{box-shadow:0 0 0 3px #ff7a1a,0 0 22px #ff7a1acc;z-index:5;animation:burnglow .5s ease-in-out infinite alternate}
+@keyframes burnglow{to{box-shadow:0 0 0 3px #ffb020,0 0 34px #ff4d1acc}}
+#game #board .cell .flame{position:absolute;left:50%;top:50%;width:62%;max-width:64px;aspect-ratio:1;transform:translate(-50%,-55%);z-index:8;pointer-events:none;filter:drop-shadow(0 2px 6px #ff4d1a99);animation:flick .35s ease-in-out infinite alternate}
+#game #board .cell .flame svg{width:100%;height:100%}
+@keyframes flick{0%{transform:translate(-50%,-55%) scale(1,1) rotate(-2deg)}100%{transform:translate(-50%,-58%) scale(1.06,1.12) rotate(2deg)}}
+/* Карточка всплывает по центру доски у всех */
+#cardpop{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:12;width:min(460px,86%);display:grid;gap:8px;filter:drop-shadow(0 16px 40px #000c);transition:opacity .25s ease;cursor:pointer}
+body>#cardpop{position:fixed}
+#cardpop.hide{opacity:0;pointer-events:none}
+#cardpop .who{margin:0;text-align:center;color:#fff;font-weight:700;font-size:15px;text-shadow:0 2px 8px #000}
+#cardpop .gcard{font-size:clamp(17px,2.4vh,21px);line-height:1.4;padding:18px 20px 20px;font-weight:600;border-radius:10px;background:#fff;color:#2b2438}
+#cardpop .gcard b{font-size:13px;margin:4px 0 8px}
+/* Залог: без плашки на клетке — клетка бледная, на полоске только число ходов до банка */
+#game #board .cell.mort::after{content:none;display:none}
+#game #board .cell.mort .pic{filter:grayscale(1);opacity:.35}
+#game #board .cell.mort .pr.rent{background:#6f7a81!important;opacity:1}

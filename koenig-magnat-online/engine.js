@@ -46,6 +46,8 @@
     return ownsGroup(s, o, c.g) ? c.rent[0] * 2 : c.rent[0];
   };
   // Как в классике: одно предприятие — кубики ×4 (40k), оба — кубики ×10 (100k)
+  // Потушить: половина стоимости поля с домами, но не больше FIRE_COST
+  E.fireCost = (s, i) => { const c = BOARD[i], h = s.houses[i] || 0, v = c.price + (c.t === 'prop' ? h * GROUPS[c.g].house : 0); return Math.min(DATA.FIRE_COST, Math.max(10, Math.round(v / 2 / 10) * 10)); };
   E.houseCost = (s, p, c) => (p && p.halfHouse ? GROUPS[c.g].house / 2 : GROUPS[c.g].house);
   E.utilMult = (s, i) => (s.owner[i] && countType(s, s.owner[i], 'utility') >= 2 ? 10 : 4);
   E.netWorth = (s, p) => {
@@ -57,7 +59,8 @@
     });
     return w;
   };
-  E.unmortCost = (i) => mortVal(i) + mortFee(i);
+  // Выкуп из залога: залог + 20%, как в Монополии One
+  E.unmortCost = (i) => mortVal(i) + Math.ceil(mortVal(i) * 0.2);
   E.actor = (s) => {
     if (s.phase !== 'play') return null;
     if (s.auction) return s.auction.order[s.auction.i];
@@ -90,7 +93,9 @@
     ev(s, { t: 'move', pid: p.id, from, to, mode: mode || 'walk' });
     p.pos = to;
     // Встал ровно на Старт — двойная выплата, как в популярном домашнем правиле Монополии
-    if (lap && to < from) { const x = to === 0 ? DATA.LAP_EXACT : DATA.LAP; log(s, to === 0 ? `${p.name} встаёт ровно на старт: +${money(x)}` : `${p.name} проходит старт: +${money(x)}`); ev(s, { t: 'lap', pid: p.id }); gain(s, p, x); }
+    if (lap && to < from) p.laps = (p.laps || 0) + 1;
+    if (lap && to < from && p.laps > DATA.PAID_LAPS) { log(s, `${p.name} проходит старт, но банк больше не платит: ${DATA.PAID_LAPS} кругов уже оплачено`); ev(s, { t: 'lapnone', pid: p.id }); }
+    else if (lap && to < from) { const x = to === 0 ? DATA.LAP_EXACT : DATA.LAP; if (p.laps === DATA.PAID_LAPS) log(s, `${p.name}: это последний оплачиваемый круг`); log(s, to === 0 ? `${p.name} встаёт ровно на старт: +${money(x)}` : `${p.name} проходит старт: +${money(x)}`); ev(s, { t: 'lap', pid: p.id }); gain(s, p, x); }
   }
   function toJail(s, p) {
     ev(s, { t: 'move', pid: p.id, from: p.pos, to: DATA.JAIL, mode: 'jump' });
@@ -107,7 +112,8 @@
     if (s.phase !== 'play') return;
     const p = cur(s);
     if (p.bankrupt) return nextTurn(s);
-    if (s.again && !p.jail) s.step = 'roll'; else nextTurn(s);
+    // Дубль — это новый ход: снова можно поставить по дому в каждой группе
+    if (s.again && !p.jail) { s.step = 'roll'; s.built = {}; } else nextTurn(s);
   }
   // Залог живёт 15 ходов владельца. Не выкупил — участок уходит банку и снова продаётся
   function tickMortgages(s, p) {
@@ -138,7 +144,7 @@
   }
   function nextTurn(s) {
     tickMortgages(s, cur(s)); tickClosed(s, cur(s));
-    s.trade = null; s.tradeDeadline = 0; s.taxi = null; s.built = {};
+    s.trade = null; s.tradeDeadline = 0; s.taxi = null; s.built = {}; s.card = null;
     s.again = false; s.doubles = 0;
     for (let guard = 0; guard < s.players.length * 2; guard++) {
       s.turn = (s.turn + 1) % s.players.length;
@@ -208,13 +214,15 @@
       return land(s, p, 2);
     }
     if (fx.lumen || fx.fire) {
-      const built = BOARD.map((c, i) => i).filter((i) => s.houses[i] && s.owner[i] && !P(s, s.owner[i]).bankrupt);
-      if (!built.length) { log(s, 'Гореть нечему: в городе ещё нет построек. Обошлось'); return true; }
-      const cell = built[rnd(built.length)], o = P(s, s.owner[cell]);
-      s.fire = { cell, pid: o.id, cost: DATA.FIRE_COST };
+      // Горит любое купленное поле, а с ним и дома на нём
+      // Горит у того, кто вытянул карточку
+      const owned = BOARD.map((c, i) => i).filter((i) => s.owner[i] === p.id && !s.mort[i]);
+      if (!owned.length) { log(s, `У ${p.name} гореть нечему — своих полей нет. Обошлось`); return true; }
+      const cell = owned[rnd(owned.length)], o = P(s, s.owner[cell]);
+      s.fire = { cell, pid: o.id, cost: E.fireCost(s, cell) };
       s.step = 'fire';
       ev(s, { t: 'fire', cell, pid: o.id });
-      log(s, `Пожар на «${BOARD[cell].name}»! ${o.name} решает: заплатить ${money(DATA.FIRE_COST)} и спасти поле с постройками или отказаться`);
+      log(s, `Пожар на «${BOARD[cell].name}»! ${o.name} решает: потушить за ${money(s.fire.cost)} или отдать поле${s.houses[cell] ? ' вместе с домами' : ''}`);
       return false;
     }
     if (fx.swap) {
@@ -279,10 +287,11 @@
   // Отказ от спасения: постройки сносятся, поле возвращается банку и снова продаётся по обычной цене
   function burnDown(s) {
     const f = s.fire, c = BOARD[f.cell], o = P(s, f.pid);
+    f.h = s.houses[f.cell] || 0; if (s.closed) delete s.closed[f.cell];
     delete s.houses[f.cell]; delete s.owner[f.cell]; delete s.mort[f.cell]; if (s.mortT) delete s.mortT[f.cell];
     s.fire = null;
     ev(s, { t: 'burned', cell: f.cell, pid: o.id });
-    log(s, `«${c.name}» сгорело: постройки снесены, поле вернулось в банк и снова продаётся`);
+    log(s, `«${c.name}» сгорело${f.h ? ' вместе с домами' : ''}: поле вернулось в банк и снова продаётся`);
     finishMove(s);
   }
   function endGame(s) {
@@ -368,12 +377,13 @@
       log(s, `${p.name} выбрасывает ${d[0]} и ${d[1]}`);
       if (p.jail) {
         s.again = false;
-        if (dbl) { p.jail = 0; log(s, `Дубль! ${p.name} выезжает из тюрьмы`); }
-        else if (p.jail >= 3) {
+        // Третья попытка: дубль уже не спасает — платишь штраф и едешь на выпавшее число
+        if (p.jail >= 3) {
           p.jail = 0;
-          log(s, `${p.name} стоял слишком долго и платит ${money(DATA.JAIL_FEE)} за выезд`);
+          log(s, `${p.name} сидит третий ход и обязан заплатить ${money(DATA.JAIL_FEE)} за выезд`);
           if (!pay(s, p, DATA.JAIL_FEE, 'pot', { move: sum })) return;
-        } else { p.jail++; s.step = 'end'; return; }
+        } else if (dbl) { p.jail = 0; log(s, `Дубль! ${p.name} выезжает из тюрьмы`); }
+        else { p.jail++; s.step = 'end'; return; }
       } else if (dbl) {
         s.doubles++;
         if (s.doubles === 3) { log(s, 'Три дубля подряд, это уже превышение'); toJail(s, p); s.step = 'end'; return; }
@@ -485,6 +495,7 @@
       if (!canManage(s, a)) return 'Сейчас нельзя';
       const i = a.cell, c = BOARD[i];
       if (s.owner[i] !== a.pid || s.mort[i]) return 'Нельзя заложить';
+      if (s.fire && s.fire.cell === i) return 'Это поле горит — его не заложить';
       if (c.t === 'prop' && groupHouses(s, c.g).some((h) => h)) return 'Сначала продай постройки в группе';
       s.mort[i] = true; s.mortT = Object.assign({}, s.mortT, { [i]: DATA.MORT_TURNS }); P(s, a.pid).money += mortVal(i);
       ev(s, { t: 'mortgage', pid: a.pid, cell: i, amount: mortVal(i) });
@@ -507,7 +518,7 @@
       transfer(s, p, f.cost, null);
       s.fire = null;
       ev(s, { t: 'saved', cell: f.cell, pid: p.id });
-      log(s, `${p.name} тушит пожар за ${money(f.cost)}: «${BOARD[f.cell].name}» спасено вместе с постройками`);
+      log(s, `${p.name} тушит пожар за ${money(f.cost)}: «${BOARD[f.cell].name}» спасено`);
       finishMove(s);
     },
     fireGiveUp(s, a) {

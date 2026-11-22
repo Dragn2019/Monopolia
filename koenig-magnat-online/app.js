@@ -73,7 +73,8 @@ const Snd = (() => {
     build() { for (let i = 0; i < 3; i++) { noise(i * 0.12, 0.04, 900, 3, 0.35); tone(210, i * 0.12, 0.05, 'square', 0.1); } },
     honk() { tone(310, 0, 0.18, 'square', 0.09); tone(370, 0, 0.18, 'square', 0.09); tone(310, 0.24, 0.3, 'square', 0.09); tone(370, 0.24, 0.3, 'square', 0.09); },
     boing() { tone(220, 0, 0.3, 'sine', 0.22, 660); tone(660, 0.28, 0.2, 'sine', 0.12, 330); },
-    fire() { noise(0, 0.7, 500, 0.5, 0.3); },
+    fire() { noise(0, 1.3, 260, 0.6, 0.28); for (let i = 0; i < 28; i++) noise(Math.random() * 1.3, 0.02 + Math.random() * 0.04, 2200 + Math.random() * 3500, 3, 0.28); for (let i = 0; i < 6; i++) tone(1250, 0.15 + i * 0.16, 0.07, 'square', 0.05); },
+    siren() { for (let k = 0; k < 2; k++) { tone(620, k * 0.7, 0.35, 'sawtooth', 0.05, 960); tone(960, k * 0.7 + 0.35, 0.35, 'sawtooth', 0.05, 620); tone(620, k * 0.7, 0.35, 'triangle', 0.09, 960); tone(960, k * 0.7 + 0.35, 0.35, 'triangle', 0.09, 620); } },
     lap() { tone(784, 0, 0.1, 'triangle', 0.15); tone(988, 0.09, 0.1, 'triangle', 0.15); tone(1319, 0.18, 0.25, 'triangle', 0.15); },
     turn() { tone(520, 0, 0.08, 'sine', 0.07); },
     myturn() { tone(659, 0, 0.14, 'sine', 0.2); tone(880, 0.13, 0.14, 'sine', 0.2); tone(1319, 0.26, 0.35, 'sine', 0.2); },
@@ -303,7 +304,7 @@ async function playEvents(ns) {
       case 'lap': Snd.play('lap'); break;
       case 'gain': flo(e.pid, '+' + money(e.amount), 'plus'); Snd.play('coin'); await sleep(300); break;
       case 'pay': flo(e.from, '−' + money(e.amount), 'minus'); if (ns.players.find((p) => p.id === e.to)) flo(e.to, '+' + money(e.amount), 'plus'); Snd.play('pay'); await sleep(420); break;
-      case 'card': $('#spot').innerHTML = cardHTML(e, true); Snd.play('card'); await sleep(Math.min(2900, 1300 + e.text.length * 14)); break;
+      case 'card': showCardPop(e); Snd.play('card'); await sleep(Math.min(2900, 1300 + e.text.length * 14)); break;
       case 'offer': Snd.play('offer'); break;
       case 'buy': Snd.play('buy'); flo(e.pid, '−' + money(e.amount), 'minus'); flashCell(e.cell); await sleep(380); break;
       case 'auction': Snd.play('gavel'); await sleep(200); break;
@@ -313,9 +314,10 @@ async function playEvents(ns) {
       case 'build': Snd.play('build'); flo(e.pid, '−' + money(e.amount), 'minus'); flashCell(e.cell); await sleep(260); break;
       case 'sell': case 'mortgage': Snd.play('coin'); flo(e.pid, '+' + money(e.amount), 'plus'); break;
       case 'unmortgage': Snd.play('pay'); flo(e.pid, '−' + money(e.amount), 'minus'); break;
-      case 'jail': Snd.play('honk'); await sleep(450); break;
+      case 'jail': Snd.play('siren'); await sleep(700); break;
+      case 'lapnone': Snd.play('pass'); break;
       case 'ball': Snd.play('boing'); await sleep(220); break;
-      case 'fire': Snd.play('fire'); flashCell(e.cell); await sleep(700); break;
+      case 'fire': Snd.play('fire'); flashCell(e.cell); await sleep(900); break;
       case 'saved': Snd.play('pay'); flashCell(e.cell); await sleep(400); break;
       case 'burned': Snd.play('fire'); Snd.play('sad'); flashCell(e.cell); await sleep(600); break;
       case 'turn': Snd.play(mine(e.pid) ? 'myturn' : 'turn'); break;
@@ -464,7 +466,8 @@ function buildBoard() {
   if (!left) { left = document.createElement('div'); left.id = 'leftcol'; $('#game').insertBefore(left, $('#boardwrap')); }
   left.innerHTML = `<div id="players"></div><div class="tools"><button id="bsound" title="Звук"></button><button id="bhelp" title="Правила">${IC.help}</button><button id="bmenu" title="Меню">${IC.menu}</button></div><div class="room" id="room"></div>`;
   $('#feednew').onclick = () => scrollFeed(true);
-  $('#feedlist').onscroll = () => { const l = $('#feedlist'); if (l.scrollHeight - l.scrollTop - l.clientHeight < 30) $('#feednew').classList.add('hide'); };
+  $('#feedlist').onscroll = () => { const l = $('#feedlist'); feedStick = l.scrollHeight - l.scrollTop - l.clientHeight < 40; if (feedStick) $('#feednew').classList.add('hide'); };
+  if (window.ResizeObserver) new ResizeObserver(() => { if (feedStick) { const l = $('#feedlist'); l.scrollTop = l.scrollHeight; } }).observe($('#feedlist'));
   $('#bsound').onclick = () => { Snd.toggle(); renderTop(); };
   $('#bhelp').onclick = () => openModal(rulesModal);
   $('#bmenu').onclick = () => openModal(menuModal);
@@ -505,7 +508,7 @@ function layout() {
   const wasTiny = game.classList.contains('tiny');
   game.classList.toggle('tiny', cellSize < 50);
   if (wasTiny !== game.classList.contains('tiny') && V && V.phase !== 'lobby') renderBoard();
-  wrap.style.setProperty('--ts', Math.round(Math.max(16, cellSize * 0.42)) + 'px');
+  wrap.style.setProperty('--ts', Math.round(Math.max(18, cellSize * 0.48)) + 'px');
   placeTokens();
 }
 window.addEventListener('resize', layout);
@@ -522,6 +525,18 @@ function markTrade() {
   }
   const put = (i, cls, sign) => { const d = document.getElementById('c' + i); if (!d) return; d.classList.add(cls); const b = document.createElement('span'); b.className = 'trb'; b.textContent = sign + DATA.kfmt(V.mort[i] ? BOARD[i].price / 2 : BOARD[i].price); d.appendChild(b); };
   out.forEach((i) => put(i, 'tr-out', '−')); inn.forEach((i) => put(i, 'tr-in', '+'));
+}
+// Вытянутая карточка всплывает у всех по центру доски и сама прячется
+function showCardPop(e) {
+  let pop = $('#cardpop');
+  if (!pop) { pop = document.createElement('div'); pop.id = 'cardpop'; }
+  const host = $('#game').classList.contains('mode-wide') ? $('#hub') : document.body;
+  if (pop.parentNode !== host) host.appendChild(pop);
+  const p = V && V.players.find((x) => x.id === e.pid);
+  pop.innerHTML = `<div class="gcard ${e.deck} pop"><b>${e.deck === 'D' ? 'Движ' : 'Сторис'}${p ? ` · <span style="color:${tokOf(p.token).color}">${esc(p.name)}</span>` : ''}</b>${esc(e.text)}</div>`;
+  pop.classList.remove('hide'); clearTimeout(showCardPop.t);
+  showCardPop.t = setTimeout(() => pop.classList.add('hide'), Math.min(4200, 2400 + e.text.length * 18));
+  pop.onclick = () => pop.classList.add('hide');
 }
 function placeTokens() {
   if (!V) return;
@@ -552,13 +567,15 @@ function renderBoard() {
     d.classList.toggle('owned', !!op);
     d.classList.toggle('full-group', !!op && c.t === 'prop' && Engine.ownsGroup(V, o, c.g));
     d.classList.toggle('here', V.phase === 'play' && !!ap && ap.pos === i && !V.auction);
+    const burning = !!V.fire && V.fire.cell === i; d.classList.toggle('burning', burning);
+    let fl = d.querySelector('.flame'); if (burning && !fl) { fl = document.createElement('span'); fl.className = 'flame'; fl.innerHTML = '<svg viewBox="0 0 48 48"><path fill="#ff7a1a" d="M24 3c2 9 12 13 12 25a12 12 0 0 1-24 0c0-6 3-10 6-13 0 5 2 8 5 9-2-8 0-15 1-21z"/><path fill="#ffd166" d="M24 22c1 5 6 7 6 13a6 6 0 0 1-12 0c0-4 2-6 4-8 0 2 1 4 2 4-1-3 0-6 0-9z"/></svg>'; d.appendChild(fl); } else if (!burning && fl) fl.remove();
     const prEl = d.querySelector('.pr');
     if (prEl && c.price) {
       const rentNow = op && !V.mort[i] ? Engine.rent(V, i, 7) : 0;
       const left = (V.mortT && V.mortT[i]) ?? DATA.MORT_TURNS, tiny = $('#game').classList.contains('tiny');
       const cl = V.closed && V.closed[i];
       d.classList.toggle('closed', !!cl);
-      const txt = !op ? DATA.kfmt(c.price) : cl ? (tiny ? '⛔' + cl.left : (cl.kind === 'check' ? 'проверка · ' : 'ремонт · ') + cl.left) : V.mort[i] ? (tiny ? '⏳' + left : 'залог · ' + left) : c.t === 'utility' ? '×' + DATA.kfmt(Engine.utilMult(V, i)) : DATA.kfmt(rentNow);
+      const txt = !op ? DATA.kfmt(c.price) : cl ? (tiny ? '⛔' + cl.left : (cl.kind === 'check' ? 'СЭС · ' : 'ремонт · ') + cl.left) : V.mort[i] ? String(left) : c.t === 'utility' ? '×' + DATA.kfmt(Engine.utilMult(V, i)) : DATA.kfmt(rentNow);
       if (prEl.textContent !== txt) prEl.textContent = txt;
       prEl.classList.toggle('rent', !!op);
       prEl.style.background = '';
@@ -614,8 +631,8 @@ function renderTradePop(my, local, btn) {
   const A = Engine.tradeValue(V, t.give, t.giveMoney), B = Engine.tradeValue(V, t.get, t.getMoney);
   const forMe = local || my === t.to, mine = my === t.from;
   const head = forMe ? `<b>${esc(f.name)}</b> предлагает обмен${local ? ' игроку <b>' + esc(to.name) + '</b>' : ''}` : mine ? `Ждём ответа <b>${esc(to.name)}</b>` : `<b>${esc(f.name)}</b> предлагает обмен <b>${esc(to.name)}</b>`;
-  const left = tradeSide(t.give, t.giveMoney, forMe && !local ? 'Ты получаешь' : esc(f.name) + ' отдаёт', A);
-  const right = tradeSide(t.get, t.getMoney, forMe && !local ? 'Ты отдаёшь' : esc(to.name) + ' отдаёт', B);
+  const left = tradeSide(t.give, t.giveMoney, forMe && !local ? 'Ты получаешь' : mine ? 'Ты отдаёшь' : esc(f.name) + ' отдаёт', A);
+  const right = tradeSide(t.get, t.getMoney, forMe && !local ? 'Ты отдаёшь' : mine ? 'Ты получаешь' : esc(to.name) + ' отдаёт', B);
   const btns = forMe ? btn('Принять', { type: 'acceptTrade', pid: t.to }, 'primary') + btn('Отказаться', { type: 'rejectTrade', pid: t.to }) : mine ? btn('Отменить', { type: 'rejectTrade' }) : '';
   return `<div class="tpop"><p class="thead">${head}</p><div class="tcols">${left}<span class="tarrow">⇄</span>${right}</div>${btns ? `<div class="btns">${btns}</div>` : ''}</div>`;
 }
@@ -628,7 +645,7 @@ function renderStage() {
     spot = `<div class="wincrown">${Art.art('crown')}</div><h3 class="turnh">Победил ${esc(PL(V.winner).name)}</h3><div class="rank">${V.final.map((f, k) => { const p = PL(f.id); return `<div class="pl">${tokHTML(tokOf(p.token))}<span class="nm2">${k + 1}. ${esc(p.name)}</span><span class="mn">${money(f.worth)}</span></div>`; }).join('')}</div>`;
     h = '<button class="primary big" id="bnew">Новая игра</button>';
   } else {
-    if (V.trade) tb = renderTradePop(my, local, btn);
+    if (V.trade && (local || my === V.trade.from || my === V.trade.to)) tb = renderTradePop(my, local, btn);
     if (V.auction) {
       const au = V.auction, ap = PL(actor);
       const nextBid = au.bidder ? au.bid + DATA.AUCTION_STEP : BOARD[au.cell].price;
@@ -639,7 +656,7 @@ function renderStage() {
       const f = V.fire, fp = PL(f.pid), c = BOARD[f.cell], lack = f.cost - fp.money;
       spot = deedMini(f.cell);
       if (my === f.pid) {
-        h = `<h3 class="turnh bad">Пожар на «${esc(c.name)}»</h3><p>Потуши за ${money(f.cost)} — поле останется у тебя. Откажешься — постройки сгорят, поле вернётся банку.</p>`;
+        h = `<h3 class="turnh bad">Пожар на «${esc(c.name)}»</h3><p>Потуши за ${money(f.cost)} — поле останется у тебя. Откажешься — поле сгорит${V.houses[f.cell] ? ' вместе с домами' : ''} и вернётся банку.</p>`;
         h += `<div class="btns">${btn('Потушить ' + money(f.cost), { type: 'fireSave' }, 'primary', lack > 0)}${btn('Отказаться', { type: 'fireGiveUp' })}</div>`;
         if (lack > 0) h += manage('Не хватает ' + money(lack) + ' · заложить');
       } else h = `<p class="wait">Пожар на «${esc(c.name)}». <b>${esc(fp.name)}</b> решает, тушить ли…</p>`;
@@ -659,11 +676,11 @@ function renderStage() {
       } else h = `<p class="wait"><b>${esc(cp.name)}</b> ${tx.cells ? 'выбирает, куда ехать' : 'думает, вызывать ли такси'}…</p>`;
     } else {
       if (V.step === 'buy') spot = deedMini(cp.pos);
-      else if (V.card) spot = cardHTML(V.card);
+      else if (V.card && V.card.by === cp.id) spot = cardHTML(V.card);
       if (my === cp.id) {
         if (V.step === 'roll') {
-          h = `<h3 class="turnh">${local ? esc(cp.name) + ', твой ход' : V.again ? 'Дубль! Бросай ещё' : 'Ваш ход!'}</h3>${cp.jail ? `<p>Ты в тюрьме, попытка ${cp.jail} из 3</p>` : ''}`;
-          h += btn('Бросить кубики', { type: 'roll' }, 'primary big');
+          h = `<h3 class="turnh">${local ? esc(cp.name) + ', твой ход' : V.again ? 'Дубль! Бросай ещё' : 'Ваш ход!'}</h3>${cp.jail ? `<p>${cp.jail >= 3 ? 'Третий ход в тюрьме: после броска платишь ' + money(DATA.JAIL_FEE) + ' и едешь, дубль уже не нужен' : 'Ты в тюрьме, попытка ' + cp.jail + ' из 3: выбрось дубль или заплати'}</p>` : ''}`;
+          h += btn(cp.jail >= 3 ? 'Бросить и заплатить ' + money(DATA.JAIL_FEE) : 'Бросить кубики', { type: 'roll' }, 'primary big');
           if (cp.jail) h += `<div class="btns">${btn('Выйти за ' + money(DATA.JAIL_FEE), { type: 'payJail' }, '', cp.money < DATA.JAIL_FEE)}${cp.jailCards ? btn('Карта «Объезд»', { type: 'useJailCard' }) : ''}</div>`;
           if (mp && !mp.bankrupt && !V.trade && V.players.filter((p) => !p.bankrupt).length > 1) h += '<button id="btrade" class="link">Предложить обмен</button>';
         } else if (V.step === 'buy') {
@@ -691,7 +708,8 @@ function renderStage() {
   if ($('#bnew')) $('#bnew').onclick = leave;
 }
 function leave() { pickMode = false; if ($('#pickbar')) $('#pickbar').remove(); if (mode === 'local') LS.del('km_local_v2'); if (mode === 'host') { LS.del('km_state_' + code); LS.del('km_last_host'); } V = null; S = null; mode = null; location.hash = ''; location.reload(); }
-function scrollFeed(force) { const l = $('#feedlist'); if (force || l.scrollHeight - l.scrollTop - l.clientHeight < 80) { l.scrollTop = l.scrollHeight; $('#feednew').classList.add('hide'); } }
+let feedStick = true;
+function scrollFeed(force) { const l = $('#feedlist'); if (force || feedStick) { l.scrollTop = l.scrollHeight; feedStick = true; $('#feednew').classList.add('hide'); requestAnimationFrame(() => { if (feedStick) l.scrollTop = l.scrollHeight; }); } }
 // Имена игроков в событиях — их цветом
 function paint(html) {
   const ps = V.players.filter((p) => p.name.length >= 2).sort((a, b) => b.name.length - a.name.length);
@@ -700,7 +718,7 @@ function paint(html) {
   return html.replace(re, (m, pre, nm) => { const p = ps.find((q) => esc(q.name) === nm); return pre + `<b style="color:${tokOf(p.token).color}">${nm}</b>`; });
 }
 function renderFeed() {
-  const l = $('#feedlist'), near = l.scrollHeight - l.scrollTop - l.clientHeight < 80, oldTop = l.scrollTop, local = mode === 'local';
+  const l = $('#feedlist'), near = feedStick, oldTop = l.scrollTop, local = mode === 'local';
   const seen = (x) => local || !x.to || x.to === myPid || x.c === myPid;
   const content = V.log.map((x) => {
     if (typeof x === 'string') return `<div class="ln event">${paint(esc(x))}</div>`;
@@ -747,7 +765,7 @@ function cellModal(i) {
   }
   if (c.t === 'prop') {
     const full = o && Engine.ownsGroup(V, o, c.g), base = !h && !V.mort[i];
-    body += `<table class="rent">${row('Участок', money(c.rent[0]), base && !full)}${row('Вся группа', money(c.rent[0] * 2), base && full)}${[1, 2, 3, 4, 5].map((n) => row(star(n), money(c.rent[n]), h === n)).join('')}</table><p class="sub">Дом ${money(GROUPS[c.g].house)} · залог ${money(c.price / 2)}</p>`;
+    body += `<table class="rent">${row('Участок', money(c.rent[0]), base && !full)}${row('Вся группа', money(c.rent[0] * 2), base && full)}${[1, 2, 3, 4, 5].map((n) => row(star(n), money(c.rent[n]), h === n)).join('')}</table><p class="sub">Дом ${money(GROUPS[c.g].house)} · залог ${money(c.price / 2)} · выкуп ${money(Engine.unmortCost(i))}</p>`;
   } else if (c.t === 'transport') {
     body += `<table class="rent">${[25, 50, 100, 200].map((r, k) => row(`${k + 1} из 4`, money(r), o && !V.mort[i] && Engine.rent(V, i) === r)).join('')}</table><p class="sub">Залог ${money(c.price / 2)}</p>`;
   } else if (c.t === 'utility') {
@@ -767,8 +785,9 @@ function cellModal(i) {
   $('#modal').innerHTML = `<div class="win cellwin"><div class="deed" style="--g:${cellColor(c)}">${deedHead(i)}</div>${body}<button class="ghost" id="mclose">Закрыть</button></div>`;
   $('#mclose').onclick = closeModal;
   $$('#modal [data-m]').forEach((bt) => (bt.onclick = () => {
-    if (['mortgage', 'sell'].includes(bt.dataset.m)) return openModal(() => pickConfirm(i, bt.dataset.m));
-    act(bt.dataset.m, { cell: i });
+    if (bt.dataset.m === 'mortgage') return openModal(() => pickConfirm(i, 'mortgage'));
+    // дом ставится или продаётся сразу, окно закрывается
+    act(bt.dataset.m, { cell: i }); closeModal();
   }));
 }
 // Залог по карте: подсвечиваем свои участки, клик — окошко «сколько получишь», принять или отказаться
@@ -811,7 +830,7 @@ function playerModal(pid) {
   const props = BOARD.map((c, i) => i).filter((i) => V.owner[i] === pid);
   const list = props.map((i) => { const c = BOARD[i], h = V.houses[i]; return `<span class="chipx ${V.mort[i] ? 'm' : ''}" data-cell="${i}"><i style="background:${cellColor(c)}"></i>${esc(c.name)}${h ? ' ' + (h === 5 ? '★' : '▲' + h) : ''}</span>`; }).join('') || '<span class="sub">Пока ничего не купил</span>';
   $('#modal').innerHTML = `<div class="win"><div class="pl" style="background:none;padding:0">${tokHTML(tokOf(p.token))}<span class="nm2"><h2 style="font-size:20px">${esc(p.name)}</h2><small>${tokOf(p.token).name}</small></span></div>
-    <div class="deed"><div class="dstats"><span>Деньги<b>${p.bankrupt ? '—' : money(p.money)}</b></span><span>Капитал<b>${p.bankrupt ? money(0) : money(Engine.netWorth(V, p))}</b></span><span>Клеток<b>${props.length}</b></span></div></div>
+    <div class="deed"><div class="dstats"><span>Деньги<b>${p.bankrupt ? '—' : money(p.money)}</b></span><span>Капитал<b>${p.bankrupt ? money(0) : money(Engine.netWorth(V, p))}</b></span><span>Клеток<b>${props.length}</b></span><span>Кругов<b>${p.laps || 0} / ${DATA.PAID_LAPS}</b></span></div></div>
     <div>${list}</div>
     <div class="btns">${my && my === V.players[V.turn].id && my !== pid && !p.bankrupt && PL(my) && !PL(my).bankrupt && V.phase === 'play' && !V.trade && !V.auction && V.step === 'roll' && !V.debt ? '<button class="primary" id="ptrade">Предложить обмен</button>' : ''}${pid === my && mode !== 'local' && V.phase === 'play' && !p.bankrupt ? '<button class="danger" id="pgive">Сдаться</button>' : ''}<button class="ghost" id="mclose">Закрыть</button></div></div>`;
   $('#mclose').onclick = closeModal;
@@ -900,11 +919,11 @@ function menuModal() {
   $('#mexit').onclick = (e) => twice(e.target, () => { location.hash = ''; mode = null; location.reload(); });
 }
 const RULES = [
-  ['dice', '#4263eb', 'Ход', 'Бросаешь два кубика и едешь по кругу. Дубль даёт ещё один бросок, три дубля подряд отправляют в тюрьму. За каждый круг через Площадь Победы получаешь $2,000k, а если встал ровно на неё — $4,000k.'],
+  ['dice', '#4263eb', 'Ход', 'Бросаешь два кубика и едешь по кругу. Дубль даёт ещё один бросок, три дубля подряд отправляют в тюрьму. За каждый круг через Площадь Победы получаешь $2,000k, а если встал ровно на неё — $4,000k. Банк платит только первые 10 кругов каждого игрока — дальше деньги надо зарабатывать.'],
   ['house', '#2aa566', 'Покупка и аукцион', 'Встал на свободную клетку — можешь купить её по цене. Отказался или не хватает денег — клетка уходит на аукцион между остальными игроками. Первая ставка равна цене участка; шаг — $200k. Пас — выход из аукциона.'],
   ['coins', '#e5484d', 'Аренда', 'Встал на чужую клетку — платишь владельцу. Транспорт: $250k, $500k, $1,000k или $2,000k, смотря сколько его у владельца. Янтарный комбинат и Маяк — сумма кубиков × 40k, а если у владельца оба — × 100k.'],
   ['cathedral', '#f08530', 'Группы и постройки', 'Собрал все клетки одного цвета — аренда без построек удваивается и можно ставить дома: до четырёх, потом отель. Строить нужно равномерно. За один ход — не больше одного дома на каждую цветную группу. Домов в городе всего 32, отелей 12: кончились — жди, пока кто-то продаст.'],
-  ['key', '#5b6b8c', 'Залог', 'Нужны деньги — заложи клетку за половину цены. Аренду она не приносит. Выкуп — залог плюс 10%. Не выкупил за 15 своих ходов — клетка уходит банку и снова продаётся.'],
+  ['key', '#5b6b8c', 'Залог', 'Нужны деньги — заложи клетку за половину цены. Аренду она не приносит. Выкуп — залог плюс 20%. Не выкупил за 15 своих ходов — клетка уходит банку и снова продаётся.'],
   ['swap', '#e0569f', 'Обмен', 'Предложить обмен можно только в свой ход, до броска кубиков. Стороны должны быть примерно равны: по цене участков и доплате разница не больше 50%. Подарки и сговоры не пройдут.'],
   ['taxi', '#f2b705', 'Такси у Дома Советов', 'Встал на такси — можешь заплатить и уехать. 1 случайное поле — $300k, 3 поля — $800k, 5 полей — $1,500k: поля выпадают наугад, ты выбираешь одно из них. Можно и просто остаться.'],
   ['jam', '#2a3b5f', 'Тюрьма', 'Клетка «Полиция», три дубля подряд или карточка ставят тебя в тюрьму на Эстакадном мосту. Выехать: выбросить дубль, заплатить $500k или сыграть карту «Объезд». На третьей попытке платишь $500k и едешь.'],

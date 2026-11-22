@@ -304,3 +304,426 @@ table.rent{font-size:12px}table.rent th{color:var(--mute);font-size:10px;text-al
 #board .cell[data-kind=tax] .nm{display:block;-webkit-line-clamp:unset;font-size:10px;line-height:1.18;overflow-wrap:normal}
 #board .cell[data-kind=tax] .cell-type{bottom:6px;font-size:8px;letter-spacing:.06em}
 @media(max-width:650px){#board .cell[data-kind=tax] .nm{font-size:8px}#board .cell[data-kind=tax][data-side=left] .pic,#board .cell[data-kind=tax][data-side=right] .pic{display:none}#board .cell[data-kind=tax][data-side=left] .meta,#board .cell[data-kind=tax][data-side=right] .meta{left:3px;right:3px}}
+/* ===== Раскладка v5: всё помещается в экран без прокрутки, чат отдельной колонкой, минималистичная доска ===== */
+html,body{overflow:hidden}
+#game{background:#e9ede9}
+#game.mode-wide,#game.mode-medium{display:grid;gap:14px;padding:14px;overflow:hidden;align-items:stretch}
+#game.mode-wide{grid-template-columns:190px var(--bs) minmax(260px,1fr)}
+#game.mode-medium{grid-template-columns:var(--bs) minmax(240px,1fr)}
+#game.mode-narrow{display:flex;flex-direction:column;align-items:center;gap:10px;padding:4px 4px 16px;overflow-y:auto;-webkit-overflow-scrolling:touch}
+#game #boardwrap{width:var(--bs);height:var(--bs);min-width:0;min-height:0;flex:none;align-self:center}
+#game #board{box-sizing:border-box;padding:var(--strip);width:100%;height:100%;gap:4px}
+#game #sidecol{display:flex;flex-direction:column;gap:12px;min-height:0;min-width:0}
+
+/* Игроки: прямоугольники в цвете игрока, сверху вниз — фишка, имя, деньги */
+#game #players{position:static;width:auto;max-height:none;height:auto;display:flex;flex-direction:column;flex-wrap:nowrap;gap:10px;overflow:auto;min-height:0;padding:0}
+#game.mode-medium #players{flex-direction:row;flex-wrap:wrap;flex:none;max-height:45%}
+#game.mode-narrow #players{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:var(--bs);gap:6px;overflow:visible}
+#game .chip{flex:0 0 auto;min-height:0;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:4px;padding:12px 8px;border-radius:12px;
+  background:color-mix(in srgb,var(--pc) 13%,white);border:2px solid color-mix(in srgb,var(--pc) 30%,white);box-shadow:none;backdrop-filter:none}
+#game .chip:hover{background:color-mix(in srgb,var(--pc) 20%,white)}
+#game .chip.turn{background:color-mix(in srgb,var(--pc) 28%,white);border-color:var(--pc);box-shadow:0 4px 14px color-mix(in srgb,var(--pc) 30%,transparent)}
+#game .chip .tk{width:38px;height:38px}
+#game .chip .who{flex:none;text-align:center}
+#game .chip .nm2{font-size:15px;color:#1d2f26}
+#game .chip small{font-size:11px;color:#5d6e64}
+#game .chip .mn{font-family:Nunito,system-ui,sans-serif;font-size:20px;font-weight:800;color:#1d3a2c;font-variant-numeric:tabular-nums}
+#game .chip .secs{position:static;margin:2px 0 0}
+#game.mode-medium .chip{flex:1 1 130px;padding:8px 6px}
+#game.mode-medium .chip .tk{width:28px;height:28px}#game.mode-medium .chip .mn{font-size:16px}#game.mode-medium .chip small{display:none}
+#game.mode-narrow .chip{flex-direction:row;padding:7px 9px;gap:8px;text-align:left}
+#game.mode-narrow .chip .tk{width:26px;height:26px}#game.mode-narrow .chip .who{flex:1;min-width:0;text-align:left}#game.mode-narrow .chip small{display:none}
+#game.mode-narrow .chip .mn{font-size:14px}#game.mode-narrow .chip .nm2{font-size:13px}
+
+/* Чат — один блок во всю высоту */
+#game #feed{position:relative;inset:auto;display:flex;flex-direction:column;height:auto;min-height:0;margin:0;z-index:auto;background:#fff;border:1px solid #dde3dd;border-radius:12px;padding:14px}
+#game.mode-medium #feed{flex:1}
+#game.mode-narrow #feed{width:var(--bs);height:70vh;flex:none;box-sizing:border-box}
+#game #feed .feedhead{display:flex;font-size:14px}#game #bfeedx,#game #bfeed,#game #mini{display:none}
+
+/* Центр доски: только название, кубики и действия */
+#game .hubin{grid-template:"top" auto "st" minmax(0,1fr)/minmax(0,1fr);padding:clamp(10px,2.2vh,24px)}
+#game #stage{grid-area:st;justify-content:center}
+#game.mode-narrow #stage{width:var(--bs);box-sizing:border-box;padding:4px 6px}
+#game #hub{background:#f6f8f5;border:1px solid #dde3dd}
+
+/* Доска поминималистичнее: белые клетки, мягкие промежутки, без лишних подписей */
+#game #board .cell{background:#fff;border:0;box-shadow:0 0 0 1px #dde3dd;border-radius:3px}
+#game #board .cell[data-kind=tax]{background:#fbf3ec}
+#game #board .cell.owned{background:color-mix(in srgb,var(--o) 30%,white)}
+#game #board .cell[data-kind=transport].owned,#game #board .cell[data-kind=utility].owned{background:color-mix(in srgb,var(--o) 30%,white)}
+#game #board .cell .ob{display:none}
+#game #board .cell.owned .pic{padding-top:0}
+#game #board .cell[data-kind=card] .cell-type,#game #board .cell[data-kind=tax] .cell-type{display:none}
+#game #board .cell[data-kind=tax] .meta{bottom:3px}#game #board .cell[data-kind=tax] .pic{bottom:26px}
+#game #board .cell .nm{font-size:clamp(7.5px,calc(var(--bs) * .0115),10.5px);font-weight:700;line-height:1.12;color:#22382c}
+#game #board .cell[data-kind=tax] .nm{font-size:clamp(7.5px,calc(var(--bs) * .011),10px)}
+/* Полоски цены/аренды снаружи поля */
+#game #board .cell .pr{font-size:clamp(8px,calc(var(--strip) * .5),13px);border-radius:0}
+#game #board .cell[data-side=top] .pr,#game #board .cell[data-side=bottom] .pr{height:var(--strip)}
+#game #board .cell[data-side=left] .pr,#game #board .cell[data-side=right] .pr{width:var(--strip)}
+#game #board .cell .pr.rent{filter:saturate(1.1) brightness(.92)}
+/* Без обводки клетки, на которой стоит игрок */
+#game #board .cell.here,#game #board .cell.owned.here{outline:none;box-shadow:0 0 0 1px #dde3dd}
+/* Фишки крупнее */
+#game .tok .tk{box-shadow:0 0 0 2px #fff,0 3px 8px #20342d40}
+#game .tok.active .tk{box-shadow:0 0 0 2px #fff,0 0 0 4px #2f5240,0 3px 10px #20342d50}
+@media(max-height:700px){#game .chip{padding:8px 6px}#game .chip .tk{width:30px;height:30px}#game .chip .mn{font-size:17px}}
+#game #players,#game #feed,#game #boardwrap,#game #sidecol{grid-area:auto}
+#game.mode-wide #players{grid-column:1}#game.mode-wide #boardwrap{grid-column:2}#game.mode-wide #feed{grid-column:3}
+#game.mode-medium #boardwrap{grid-column:1}#game.mode-medium #sidecol{grid-column:2}
+#game.mode-narrow #stage{height:auto;flex:none;min-height:0;overflow:visible;gap:8px}
+#game.mode-narrow #stage>*{width:100%}
+/* Маленькие клетки: только рисунок, без подписи */
+#game.tiny #board .cell .nm{display:none}
+#game.tiny #board .cell .pic,#game.tiny #board .cell[data-side=left] .pic,#game.tiny #board .cell[data-side=right] .pic{inset:3px}
+#game.tiny #board .cell[data-kind=card] .pic{inset:2px}
+#game.tiny #board .cell .hs{transform:scale(.75);transform-origin:top right}
+#game.tiny .event-question{font-size:22px}
+#game.mode-narrow>*{flex-shrink:0}
+#game.tiny #board .cell[data-kind=start] .cell-type,#game.tiny #board .cell[data-kind=start] .meta{display:none}
+#game.tiny #board .cell[data-kind=start] .pic{inset:4px}
+#game.tiny #board .cell .pr{font-size:8px;padding:0 1px;letter-spacing:-.02em}
+/* ===== Тёмная тема в духе Монополии One: тёмный стол, белые клетки, цветные полоски цен ===== */
+#game{--ink:#e9edf0;--mute:#9aa5ad;background:#2b2f33;color:var(--ink)}
+#game #hub{background:transparent;border:0;box-shadow:none}
+#game #hub .sky{display:none}
+#game .brand{color:#e9edf0}#game .brand b{color:#5fc29a}
+#game .room{color:#9aa5ad}#game .room b{color:#5fc29a}
+#game .tools button{background:#3a3f44;color:#e9edf0}#game .tools button:hover{background:#474d53}
+/* клетки */
+#game #board{gap:3px}
+#game #board .cell{background:#fff;box-shadow:none;border-radius:0}
+#game #board .cell[data-kind=tax]{background:#fff}
+#game #board .cell.owned,#game #board .cell[data-kind=transport].owned,#game #board .cell[data-kind=utility].owned{background:color-mix(in srgb,var(--o) 45%,white)}
+#game #board .cell.here,#game #board .cell.owned.here{box-shadow:none}
+#game #board .cell .pr{border-radius:0}
+#game #board .cell[data-kind=jail],#game #board .cell[data-kind=gotojail],#game #board .cell[data-kind=parking],#game #board .cell[data-kind=start]{background:#fff}
+#game #board .cell[data-side=top] .pic,#game #board .cell[data-side=bottom] .pic{inset:12% 10% 34%}
+#game #board .cell[data-side=top] .meta,#game #board .cell[data-side=bottom] .meta{bottom:6%}
+#game #board .cell[data-kind=card] .pic{inset:10%}
+/* игроки: тёмные карточки, кольцо в цвете игрока, у того, кто ходит, — карточка целиком его цвета */
+#game .chip{background:#1f2326;border:0;border-radius:4px;box-shadow:none}
+#game .chip:hover{background:#262b2f}
+#game .chip .tk{box-shadow:0 0 0 3px var(--pc),0 0 0 5px #1f2326}
+#game .chip .nm2{color:#e9edf0}#game .chip small{color:#9aa5ad}
+#game .chip .mn{color:#fff;font-weight:600;font-size:24px;letter-spacing:.01em}
+#game .chip.turn{background:var(--pc);box-shadow:none}
+#game .chip.turn .tk{box-shadow:0 0 0 3px #fff}
+#game .chip.turn .nm2,#game .chip.turn .mn{color:#fff;text-shadow:0 1px 2px #0003}#game .chip.turn small{color:#ffffffcc}
+#game .chip .secs{background:#00000033;color:#fff;border-radius:99px;padding:3px 9px;font-weight:700}
+#game.mode-narrow .chip .mn{font-size:15px}#game.mode-medium .chip .mn{font-size:17px}
+/* чат */
+#game #feed{background:#1f2326;border:0;border-radius:4px}
+#game #feed .feedhead{color:#9aa5ad}
+#game #feedlist{color:#c9d0d5}
+#game #feedlist .event{border-bottom:1px solid #2e3337}
+#game #feedlist .ln:last-child{color:#fff}
+#game #feedlist .chat{background:#2b3034;color:#e9edf0}
+#game #feedlist .card-event{background:#2a2838;border-left-color:#8e7cc3;color:#d9d4ec}
+#game #chatform input{background:#2b3034;border-color:#3a4045;color:#e9edf0}
+#game #chatform input::placeholder{color:#8a949b}
+/* центр: белая карточка решения, как «Покупаем?» */
+#game #stage{color:#e9edf0}
+#game #stage p,#game #stage .hint,#game .landing p{color:#b7c0c6}
+#game #stage .who,#game .landing h3{color:#fff}
+#game .landing small{color:#9aa5ad}
+#game #spot .deed{background:#fff;color:#22392f;border-radius:6px}
+#game #actions button{border-radius:4px;box-shadow:none;font-weight:700}
+#game #actions button.primary{background:#5bb592;color:#fff}
+#game #actions button.primary:hover{background:#4fa883}
+#game #actions button:not(.primary):not(.danger){background:#eceef0;color:#2b2f33;border:0}
+#game #actions button.danger{background:#e2585a;color:#fff}
+#game #actions button.ghost,#game #btrade{background:transparent!important;color:#e9edf0!important;box-shadow:inset 0 0 0 1px #50575d!important}
+#game .die{background:#fff;box-shadow:0 3px 0 #c9cfd3}
+#game .gcard{border-radius:6px}
+#game #timer{background:#3a3f44}
+#game #board .cell[data-kind=start] .pic{inset:10% 18% 42%}
+#game #board .cell[data-kind=start] .meta{bottom:26%}
+#game #board .cell[data-kind=start] .cell-type{bottom:8%}
+#game.tiny #board .cell[data-kind=start] .pic{inset:12%}
+@media(max-width:1050px){
+  #game:not(.tiny) #board .cell[data-side=left]:not([data-kind=jail]):not([data-kind=gotojail]) .pic,#game:not(.tiny) #board .cell[data-side=right]:not([data-kind=jail]):not([data-kind=gotojail]) .pic{inset:5px 52% 5px 7px}
+  #game:not(.tiny) #board .cell[data-side=left]:not([data-kind=jail]):not([data-kind=gotojail]) .meta,#game:not(.tiny) #board .cell[data-side=right]:not([data-kind=jail]):not([data-kind=gotojail]) .meta{inset:0 4px 0 49%;display:flex;align-items:center;justify-content:center}
+}
+
+/* ===== v6 · как в Монополии One: чат в центре доски, доска на всю ширину, минимум лишнего ===== */
+#game{--ink:#e9edf0;--mute:#8d979e;background:#272c2f;color:var(--ink)}
+#game.mode-wide{display:grid;grid-template-columns:var(--colw) var(--bw);justify-content:center;align-items:stretch;gap:14px;padding:14px;overflow:hidden}
+#game.mode-wide #boardwrap{grid-column:2;grid-row:1;width:var(--bw);height:var(--bs);align-self:center}
+#game.mode-narrow #boardwrap{width:var(--bw);height:var(--bs)}
+#game #sidecol{display:none!important}
+#leftcol{display:flex;flex-direction:column;gap:10px;min-width:0;min-height:0}
+#game.mode-wide #leftcol{grid-column:1;grid-row:1}
+#game.mode-narrow #leftcol{width:var(--bs)}
+#game #leftcol #players{display:flex;flex-direction:column;gap:10px;overflow:auto;min-height:0;flex:0 1 auto;scrollbar-width:none}
+#game.mode-narrow #leftcol #players{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;overflow:visible}
+#leftcol .tools{display:flex;gap:8px;justify-content:center;flex:none}
+#game #leftcol .tools button{width:38px;height:38px;border-radius:50%;background:#1f2326;color:#aeb7bd;border:0;padding:9px;display:grid;place-items:center;box-shadow:none}
+#game #leftcol .tools button:hover{background:#30363a;color:#fff}
+#leftcol .tools svg{width:100%;height:100%;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+#leftcol .room{font-size:12px;color:#8d979e;text-align:center;line-height:1.4}#leftcol .room:empty{display:none}#leftcol .room b{color:#61b99e}
+
+/* Фишки: белый круг, цветной рисунок, кольцо в цвете игрока */
+#game .tk,#lobby .tk,#modal .tk,#home .tk{background:#fff;box-shadow:0 0 0 3px var(--tc),0 2px 6px #0006}
+.tk svg{width:84%;height:84%;overflow:visible}
+#game .tok .tk{box-shadow:0 0 0 2.5px var(--tc),0 3px 8px #000a}
+#game .tok.active .tk{box-shadow:0 0 0 2.5px var(--tc),0 0 0 5px #fff,0 3px 10px #000b}
+#game .tok.active{z-index:6}
+
+/* Игроки */
+#game .chip{background:#171a1b;border:0;border-radius:4px;padding:14px 8px;gap:6px}
+#game .chip:hover{background:#1e2224}
+#game .chip .tk{width:46px;height:46px;box-shadow:0 0 0 3px var(--tc)}
+#game .chip.turn{background:var(--pc)}
+#game .chip.turn .tk{box-shadow:0 0 0 3px #fff}
+#game .chip .nm2{font-size:15px;font-weight:700}
+#game .chip small{font-size:11px;color:#8d979e}
+#game .chip .mn{font-size:26px;font-weight:600;color:#fff;letter-spacing:0}
+#game.compact .chip{padding:10px 6px}#game.compact .chip .tk{width:34px;height:34px}#game.compact .chip .mn{font-size:19px}#game.compact .chip .nm2{font-size:13px}
+#game.mode-narrow .chip{flex-direction:row;padding:8px 10px}#game.mode-narrow .chip .tk{width:28px;height:28px}#game.mode-narrow .chip .mn{font-size:15px}
+#game .chip.out{opacity:.4}
+
+/* Доска: белые клетки, ровные зазоры, полоски цен ровно по клетке */
+#game #board{gap:4px;padding:var(--strip)}
+#game #board .cell{background:#fff;border:0;box-shadow:none;border-radius:2px}
+#game #board .cell.owned,#game #board .cell[data-kind=transport].owned,#game #board .cell[data-kind=utility].owned{background:color-mix(in srgb,var(--o) 30%,white)}
+#game #board .cell[data-side=top] .pr{bottom:100%;left:0;right:0;top:auto}
+#game #board .cell[data-side=bottom] .pr{top:100%;left:0;right:0;bottom:auto}
+#game #board .cell[data-side=left] .pr{right:100%;top:0;bottom:0;left:auto}
+#game #board .cell[data-side=right] .pr{left:100%;top:0;bottom:0;right:auto}
+#game #board .cell .pr{font-family:Nunito,system-ui,sans-serif;font-weight:600;font-size:clamp(9px,calc(var(--strip) * .58),15px);border-radius:2px 2px 0 0;filter:none;text-shadow:none;letter-spacing:0}
+#game #board .cell[data-side=bottom] .pr{border-radius:0 0 2px 2px}#game #board .cell[data-side=left] .pr{border-radius:0 2px 2px 0}#game #board .cell[data-side=right] .pr{border-radius:0 2px 2px 0}
+#game #board .cell .pr.rent{background:color-mix(in srgb,var(--g) 80%,#000)}
+#game #board .cell .nm{color:#2a332e;font-weight:700}
+#game #board .cell.mort .pic,#game #board .cell.mort .nm{opacity:.35}
+/* Старт: одна большая картинка и сумма за круг */
+#game #board .cell[data-kind=start] .meta{display:none}
+#game #board .cell[data-kind=start] .pic{inset:8% 12% 26%}
+#game #board .cell[data-kind=start] .cell-type{bottom:7%;font:800 clamp(10px,calc(var(--bs) * .016),17px) Nunito,system-ui,sans-serif;color:#3c9c74;letter-spacing:0}
+/* Звёзды построек — с внутренней стороны клетки, к центру доски */
+#game #board .cell .hs{position:absolute;inset:auto;display:flex;gap:1px;padding:0;background:none;border-radius:0;box-shadow:none;transform:none;z-index:4;color:#2a332e}
+#game #board .cell .hs svg{width:clamp(8px,calc(var(--bs) * .014),14px);height:clamp(8px,calc(var(--bs) * .014),14px);fill:currentColor;filter:drop-shadow(0 0 1px #fff)}
+#game #board .cell .hs.hotel{color:#e5a91a}
+#game #board .cell .hs.hotel svg{width:clamp(12px,calc(var(--bs) * .022),20px);height:clamp(12px,calc(var(--bs) * .022),20px);filter:drop-shadow(0 1px 1px #0005)}
+#game #board .cell[data-side=top] .hs{bottom:3px;left:0;right:0;justify-content:center}
+#game #board .cell[data-side=bottom] .hs{top:3px;left:0;right:0;justify-content:center}
+#game #board .cell[data-side=left] .hs{right:3px;top:0;bottom:0;flex-direction:column;justify-content:center}
+#game #board .cell[data-side=right] .hs{left:3px;top:0;bottom:0;flex-direction:column;justify-content:center}
+/* Такси: подсветка полей, куда можно уехать */
+#game #board .cell.taxi-opt{box-shadow:0 0 0 3px #f2b705,0 0 18px #f2b70599;z-index:3;cursor:pointer;animation:taxiglow 1.2s ease-in-out infinite alternate}
+@keyframes taxiglow{to{box-shadow:0 0 0 3px #f2b705,0 0 4px #f2b70533}}
+
+/* Центр: карточка решения сверху, чат на всю оставшуюся высоту */
+#game #hub{background:transparent;border:0;box-shadow:none}
+#game.mode-wide .hubin{display:flex;flex-direction:column;gap:12px;padding:clamp(8px,1.6vh,16px);height:100%;box-sizing:border-box}
+#game #stage{--ink:#1f2a24;--mute:#77838a;position:relative;background:#fff;color:var(--ink);border-radius:6px;padding:14px 18px 16px;display:flex;flex-direction:column;align-items:stretch;justify-content:flex-start;gap:10px;flex:none;max-height:72%;overflow:auto;box-shadow:0 6px 24px #0004;box-sizing:border-box}
+#game.mode-narrow #stage{width:var(--bs)}
+#game #stage>*{width:auto;max-width:none}
+#game #stage.idle{padding:10px 16px;gap:6px}
+#game #dice{gap:8px;justify-content:center}
+#game .die{width:34px;height:34px;padding:5px;border-radius:8px;background:#fff;box-shadow:inset 0 0 0 1.5px #dfe3e6,0 2px 0 #dfe3e6}
+#game .die i.on{background:#272c2f}
+#game #stage.idle #dice{display:none}
+#game #spot:empty{display:none}
+#game #actions{display:flex;flex-direction:column;gap:8px}
+#game #actions .turnh{font:800 clamp(17px,2.4vh,24px) Nunito,system-ui,sans-serif;margin:0;color:#1f2a24;text-align:left}
+#game #actions .turnh.bad{color:#c95057}
+#game #actions p{margin:0;color:#5d6870;text-align:left;font-size:13px;line-height:1.45}
+#game #actions p.wait{text-align:center;color:#5d6870;font-size:14px}#game #actions p.wait b{color:#1f2a24}
+#game #actions .btns{display:flex;gap:8px;flex-wrap:wrap}#game #actions .btns>button{flex:1 1 0;min-width:120px}
+#game #actions .btns.col{flex-direction:column}#game #actions .btns.col>button{flex:none}
+#game #stage button{border-radius:4px;box-shadow:none;font-weight:700;border:0;padding:12px 14px;font-size:15px}
+#game #stage button.primary{background:#61b99e;color:#fff}#game #stage button.primary:hover{background:#52a98e}
+#game #stage button.primary:disabled{background:#b9ddd1}
+#game #stage button:not(.primary):not(.link):not(.manage){background:#eceef0;color:#272c2f}
+#game #stage button:not(.primary):not(.link):not(.manage):hover{background:#e0e3e6}
+#game #stage button.manage{background:transparent;color:#3c8c71;box-shadow:inset 0 0 0 1.5px #b9ddd1;padding:9px}
+#game #stage button.link{background:none;color:#77838a;padding:4px;font-size:13px;font-weight:600;text-decoration:underline;text-underline-offset:3px}
+#game #stage button.taxiopt{text-align:left}
+#game #actions .big{font-size:16px;padding:13px}
+#game #spot .deed{border:1px solid #e3e7ea;border-radius:6px;background:#fff;color:#1f2a24;box-shadow:none}
+#game #spot .deed .dhead{border-top:5px solid var(--g);background:#fff}
+#game #spot .deed .dhead h3{color:#1f2a24}#game #spot .deed .dhead small{color:#77838a}
+#game #spot .deed .dprice{color:#1f2a24}
+#game #spot .deed .dstats span{background:#f3f5f6;color:#77838a}#game #spot .deed .dstats b{color:#1f2a24}
+#game #spot .ainfo{display:grid;gap:3px;margin-top:8px;font-size:13px;color:#5d6870}#game #spot .ainfo b{color:#1f2a24;font-size:15px}#game #spot .ainfo u{color:#1f2a24;font-weight:700}
+#game .gcard{box-shadow:none;border-radius:6px}
+#game #timer{height:4px;background:#eceef0;border-radius:2px;margin:0}#game #timer i{background:#61b99e}#game #timer.hot i{background:#c95057}
+#game #stage.idle #timer{display:none}
+
+/* Чат: прямо на тёмном поле, без рамок */
+#game #feed{position:relative;display:flex;flex-direction:column;background:transparent;border:0;border-radius:0;padding:0;flex:1;min-height:0;margin:0}
+#game.mode-narrow #feed{width:var(--bs);height:60vh;flex:none;background:#1f2326;border-radius:6px;padding:10px}
+#game #feed .feedhead{display:none}
+#game #feedlist{flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;gap:7px;padding:2px 4px 6px 2px;font-size:13px;line-height:1.45;color:#9aa5ad;scrollbar-width:thin;scrollbar-color:#3a4045 transparent}
+#game #feedlist .ln{flex-shrink:0}
+#game #feedlist .event{border:0;padding:0;color:#8d979e}
+#game #feedlist .ln:last-child{color:#c9d0d5}
+#game #feedlist .chat{background:none;color:#e9edf0;padding:0;border-radius:0;max-width:none;align-self:stretch}
+#game #feedlist .chat b{margin-right:4px}
+#game #feedlist .chat.priv{background:#2f2a3d;border-radius:6px;padding:6px 9px}
+#game #feedlist .pm{font-style:normal;font-size:11px;color:#b9a6f0;margin-right:6px}
+#game #feedlist .card-event{background:none;border-left:2px solid #6a5b9c;border-radius:0;padding:2px 0 2px 10px;color:#c9c2e0}
+#game #feedlist .card-event p{margin:2px 0 0}
+#game #feednew{position:absolute;bottom:52px;left:50%;transform:translateX(-50%);background:#61b99e;color:#fff;border:0;border-radius:99px;padding:4px 12px;font-size:12px}
+#game #chatform{display:flex;gap:6px;align-items:center;flex:none;padding-top:6px;border-top:1px solid #3a4045}
+#game #chatform select{flex:none;max-width:34%;background:#3a4045;color:#e9edf0;border:0;border-radius:4px;padding:7px 6px;font-size:12px}
+#game #chatform input{flex:1;min-width:0;background:transparent;border:0;color:#e9edf0;font-size:14px;padding:8px 4px;box-shadow:none;outline:none}
+#game #chatform input::placeholder{color:#6f7a81}
+#game #chatform button{flex:none;width:36px;height:36px;padding:0;border-radius:50%;border:0;box-shadow:none;background:transparent;color:#aeb7bd;font-size:18px}
+#game #chatform button.primary{background:#61b99e;color:#fff;font-size:14px}
+#emopanel{position:absolute;bottom:50px;right:0;display:grid;grid-template-columns:repeat(6,1fr);gap:2px;background:#1f2326;border-radius:8px;padding:8px;box-shadow:0 8px 30px #0008;z-index:7}
+#emopanel.hide{display:none}
+#emopanel button{background:none;border:0;font-size:20px;width:38px;height:38px;border-radius:6px;padding:0;box-shadow:none}
+#emopanel button:hover{background:#30363a}
+.bub{max-width:220px}
+
+/* Обмен: всплывает наглядно — что отдают, что получаешь */
+#game #tradebar{position:absolute;inset:0;z-index:6;display:grid;place-items:center;padding:14px;background:#272c2fd9}
+#game #tradebar.hide{display:none}
+#game.mode-narrow #tradebar{position:static;background:none;padding:0;width:var(--bs)}
+.tpop{background:#fff;color:#1f2a24;border-radius:8px;padding:16px;width:min(560px,100%);max-height:100%;overflow:auto;box-shadow:0 12px 40px #0008;display:grid;gap:12px;box-sizing:border-box}
+.tpop .thead{margin:0;font-size:15px;text-align:center}
+.tcols{display:grid;grid-template-columns:1fr auto 1fr;gap:10px;align-items:stretch}
+.tarrow{align-self:center;font-size:22px;color:#9aa5ad}
+.tside{background:#f4f6f7;border-radius:6px;padding:10px;display:flex;flex-direction:column;gap:8px;min-width:0}
+.tside h4{margin:0;font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:#77838a}
+.tlist{display:grid;gap:6px;flex:1;align-content:start}
+.titem{display:grid;grid-template-columns:34px 1fr auto;align-items:center;gap:8px;background:#fff;border-left:4px solid var(--g,#61b99e);border-radius:4px;padding:5px 8px 5px 6px;font-size:13px}
+.titem .tpic{width:34px;height:34px;display:grid;place-items:center;--dark:#274b39;--amber2:#d7a53a}.titem .tpic .art{width:100%;height:100%}.titem .tpic .art .w{fill:#355e47}.titem .tpic .art .sw{stroke:#355e47}
+.titem.money{--g:#3c9c74}.titem.money .tpic{font:800 20px Nunito,sans-serif;color:#3c9c74}
+.titem .tnm{font-weight:700;line-height:1.2;min-width:0;overflow-wrap:anywhere}.titem b{white-space:nowrap}
+.ttotal{font-size:13px;color:#5d6870;border-top:1px solid #e3e7ea;padding-top:6px}.ttotal b{color:#1f2a24;font-size:15px}
+.tpop .btns{display:flex;gap:8px}.tpop .btns button{flex:1;border:0;border-radius:4px;padding:12px;font-weight:700;box-shadow:none}
+.tpop .btns button.primary{background:#61b99e;color:#fff}.tpop .btns button:not(.primary){background:#eceef0;color:#272c2f}
+@media(max-width:560px){.tcols{grid-template-columns:1fr}.tarrow{display:none}}
+
+/* Окна: обмен с суммами, «заложить или продать» */
+#modal .tradewin .trade-columns{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+#modal .tradewin section{display:flex;flex-direction:column;gap:6px}
+#modal .tradewin .ttotal{margin-top:auto}
+#modal .tbal{margin:0;font-size:13px;color:#3c8c71;font-weight:700}#modal .tbal.bad{color:#c95057}
+#modal .mlist{display:grid;gap:6px;max-height:52vh;overflow:auto}
+#modal .mrow{display:grid;grid-template-columns:10px 1fr auto;gap:10px;align-items:center;padding:6px 0;border-bottom:1px solid #eef1f3;font-size:14px}
+#modal .mrow i{width:10px;height:10px;border-radius:50%}#modal .mrow small{color:#e5a91a}
+#modal .mrow button{white-space:nowrap}
+#game #board .cell[data-kind=start] .pic{transform:none}
+/* Звёзды — снаружи клетки, со стороны центра доски */
+#game #board .cell{overflow:visible}
+#game #board .cell[data-side=top] .hs{top:calc(100% + 2px);bottom:auto}
+#game #board .cell[data-side=bottom] .hs{bottom:calc(100% + 2px);top:auto}
+#game #board .cell[data-side=left] .hs{left:calc(100% + 2px);right:auto}
+#game #board .cell[data-side=right] .hs{right:calc(100% + 2px);left:auto}
+#game #board .cell .hs{color:#e9edf0;z-index:7}
+#game #board .cell .hs svg{filter:none}
+#game #board .cell .hs.hotel{color:#f2c14e}
+#game #stage #btrade{background:none!important;box-shadow:none!important;color:#77838a!important;border:0!important;padding:4px!important;font-size:13px!important;font-weight:600}
+#game #stage #btrade:hover{color:#1f2a24!important}
+#game #board .cell .nm{overflow-wrap:normal;word-break:normal;hyphens:auto;-webkit-hyphens:auto}
+#game #timer.off{display:none}
+#game .chip .mn .cur{font-size:.6em;opacity:.75;margin-right:4px;vertical-align:.12em;font-weight:500}
+#game #board .cell .pr{white-space:nowrap;overflow:hidden}
+#game.tiny #board .cell .pr{font-size:clamp(7px,calc(var(--strip) * .55),11px);letter-spacing:-.02em;padding:0 1px}
+#game .chip .mn{display:flex;align-items:baseline;justify-content:center;white-space:nowrap}
+#game .chip .mn .cur{display:inline;vertical-align:0}
+
+/* ===== v7: карточки крупнее, окно клетки проще, залог по карте, иконки в цвете группы ===== */
+#game #spot .gcard{font-size:clamp(16px,2.2vh,20px);line-height:1.4;padding:16px 18px 18px;color:#2b2438;font-weight:600}
+#game #spot .gcard b{font-size:13px;margin:4px 0 8px}
+#game .die{width:46px;height:46px;padding:7px;border-radius:10px}
+#game #dice{gap:10px}
+#game.compact .die{width:40px;height:40px;padding:6px}
+
+/* Окно клетки: только нужное */
+#modal .cellwin{gap:12px}
+#modal .cellwin .own{margin:0;display:flex;align-items:center;gap:8px;font-size:14px;color:#5d6870;flex-wrap:wrap}
+#modal .cellwin .own i{width:10px;height:10px;border-radius:50%}
+#modal .cellwin .own b{color:#1f2a24}#modal .cellwin .own .bad{color:#c95057;font-weight:700}
+#modal .cellwin table.rent{width:100%;border-collapse:collapse;font-size:15px}
+#modal .cellwin table.rent td{padding:7px 4px;border-bottom:1px solid #eef1f3}
+#modal .cellwin table.rent td:last-child{text-align:right;font-weight:700}
+#modal .cellwin table.rent tr.cur td{background:#eef7f3;color:#1f2a24}
+#modal .cellwin table.rent tr.cur td:first-child{box-shadow:inset 3px 0 0 #61b99e}
+#modal .cellwin .gold{color:#e5a91a}
+#modal .cellwin .sub{margin:0;font-size:13px}
+#modal .cellwin .reason{margin:0;font-size:12px;color:#8d979e;text-align:center}
+#modal .property-actions{display:flex;gap:8px;flex-wrap:wrap}#modal .property-actions>*{flex:1 1 140px}
+
+/* Подтверждение залога */
+#modal .win.small{max-width:380px;gap:10px;text-align:center}
+#modal .win.small h2{margin:4px 0 0;font-size:19px}
+#modal .big-gain{margin:0;font:800 34px Nunito,system-ui,sans-serif;color:#3c9c74}
+#modal .win.small .sub{margin:0;font-size:13px;line-height:1.45}
+#modal .win.small .btns{display:flex;gap:8px}#modal .win.small .btns button{flex:1}
+
+/* Режим выбора участков для залога */
+#pickbar{position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:60;display:flex;align-items:center;gap:16px;background:#1f2326;color:#fff;border-radius:10px;padding:10px 10px 10px 18px;box-shadow:0 10px 30px #000a;font-weight:700;font-size:15px;max-width:calc(100vw - 20px)}
+#pickbar span{display:grid;gap:2px}#pickbar small{font-weight:500;color:#9aa5ad;font-size:12px}
+#pickbar button{background:#61b99e;color:#fff;border:0;border-radius:6px;padding:10px 18px;font-weight:700;box-shadow:none}
+#game.pick-mode #board .cell:not(.pickable){filter:grayscale(.6) brightness(.55)}
+#game.pick-mode #board .cell.pickable{cursor:pointer;box-shadow:0 0 0 3px #61b99e,0 0 16px #61b99e88;z-index:3}
+#game.pick-mode #hub{filter:brightness(.6)}
+
+/* Иконки клеток: в цветах своей группы (вариант А) */
+#game #board .cell[data-kind=prop] .pic .art,#game #board .cell[data-kind=transport] .pic .art,#game #board .cell[data-kind=utility] .pic .art,
+#modal .deed .dart .art,.titem .tpic .art,#game #spot .deed .dart .art{--dark:color-mix(in srgb,var(--g) 38%,#1b2420);--amber2:color-mix(in srgb,var(--g) 55%,#fff)}
+#game #board .cell[data-kind=prop] .pic .art .w,#game #board .cell[data-kind=transport] .pic .art .w,#game #board .cell[data-kind=utility] .pic .art .w,
+#modal .deed .dart .art .w,.titem .tpic .art .w,#game #spot .deed .dart .art .w{fill:color-mix(in srgb,var(--g) 78%,#1b2420)}
+#game #board .cell[data-kind=prop] .pic .art .sw,#game #board .cell[data-kind=transport] .pic .art .sw,#game #board .cell[data-kind=utility] .pic .art .sw,
+#modal .deed .dart .art .sw,.titem .tpic .art .sw,#game #spot .deed .dart .art .sw{stroke:color-mix(in srgb,var(--g) 78%,#1b2420)}
+/* Остальные клетки — спокойный графит с золотом */
+#game #board .cell:not([data-kind=prop]):not([data-kind=transport]):not([data-kind=utility]):not([data-kind=start]) .pic .art{--dark:#2f3a40;--amber2:#d9b651}
+#game #board .cell:not([data-kind=prop]):not([data-kind=transport]):not([data-kind=utility]):not([data-kind=start]) .pic .art .w{fill:#55636b}
+#game #board .cell:not([data-kind=prop]):not([data-kind=transport]):not([data-kind=utility]):not([data-kind=start]) .pic .art .sw{stroke:#55636b}
+#hub #pickbar{position:absolute;top:clamp(8px,1.6vh,16px);left:clamp(8px,1.6vh,16px);right:clamp(8px,1.6vh,16px);transform:none;max-width:none;justify-content:space-between;z-index:8}
+body>#pickbar{top:auto;bottom:12px}
+#game.pick-mode #hub{filter:none}
+#game.pick-mode .hubin{filter:brightness(.55)}
+
+/* ===== v8: клетка белая, полоска купленной — в цвете владельца с арендой; обмен на поле ===== */
+#game #board .cell.owned,#game #board .cell[data-kind=transport].owned,#game #board .cell[data-kind=utility].owned{background:#fff;box-shadow:inset 0 0 0 3px var(--o)}
+#game #board .cell .pr.rent{color:#fff;font-weight:800;text-shadow:0 1px 1px #0003}
+#game #board .cell.mort{box-shadow:inset 0 0 0 3px color-mix(in srgb,var(--o) 45%,#fff)}
+#game #board .cell.mort .pr.rent{opacity:.75}
+#game #board .cell .pr{text-orientation:sideways}
+/* Обмен: отдаёшь — приподнято с «−», получаешь — с «+» */
+#game #board .cell.tr-out,#game #board .cell.tr-in{transform:translateY(-18px);z-index:9;transition:transform .2s ease,box-shadow .2s ease}
+#game #board .cell.tr-out{box-shadow:inset 0 0 0 3px #c95057,0 10px 22px #000a}
+#game #board .cell.tr-in{box-shadow:inset 0 0 0 3px #3fae84,0 10px 22px #000a}
+#game #board .cell .trb{position:absolute;left:50%;top:0;transform:translate(-50%,-60%);z-index:10;padding:3px 8px;border-radius:99px;font:800 clamp(10px,calc(var(--bs) * .015),14px) Nunito,system-ui,sans-serif;color:#fff;white-space:nowrap;box-shadow:0 3px 8px #0007;pointer-events:none}
+#game #board .cell.tr-out .trb{background:#c95057}
+#game #board .cell.tr-in .trb{background:#3fae84}
+#game #board .cell{transition:transform .2s ease}
+/* Фишки поменьше, в свободном углу клетки */
+#game .tok .tk{box-shadow:0 0 0 2px var(--tc),0 2px 6px #0009}
+/* Карточка хода — компактнее */
+#game #stage{gap:8px;padding:12px 16px 14px}
+#game #stage #dice{margin-bottom:-2px}
+#game #board .cell[data-side=left].tr-out,#game #board .cell[data-side=left].tr-in{transform:translateX(18px)}
+#game #board .cell[data-side=right].tr-out,#game #board .cell[data-side=right].tr-in{transform:translateX(-18px)}
+/* значок «+/−» — с внутренней стороны клетки, чтобы соседи его не закрывали */
+#game #board .cell[data-side=top] .trb{top:auto;bottom:0;transform:translate(-50%,60%)}
+#game #board .cell[data-side=left] .trb{left:auto;right:0;top:50%;transform:translate(70%,-50%)}
+#game #board .cell[data-side=right] .trb{left:0;top:50%;transform:translate(-70%,-50%)}
+
+/* ===== v9: как было — купленная клетка залита цветом владельца (чуть насыщеннее), полоска цены в цвете группы ===== */
+#game #board .cell.owned,#game #board .cell[data-kind=transport].owned,#game #board .cell[data-kind=utility].owned{background:color-mix(in srgb,var(--o) 40%,white);box-shadow:none}
+#game #board .cell.mort{box-shadow:none;background:color-mix(in srgb,var(--o) 18%,white)}
+#game #board .cell .pr.rent{background:color-mix(in srgb,var(--g) 80%,#000)!important;color:#fff;font-weight:700;text-shadow:none}
+/* Окно обмена: ровные колонки и участки в одну строку */
+#modal .tradewin .trade-columns{grid-template-rows:auto 1fr auto auto;row-gap:8px}
+#modal .tradewin .trade-columns>section{display:grid;grid-row:span 4;grid-template-rows:subgrid;gap:8px;min-width:0}
+#modal .tradewin .trade-columns>section>div:not(.ttotal){display:flex;flex-direction:column;gap:6px;align-content:start;min-width:0}
+#modal .tradewin label{display:grid;gap:4px;font-size:13px;color:#5d6870}
+#modal .tchip{display:grid;grid-template-columns:10px minmax(0,1fr) auto auto;align-items:center;gap:8px;width:100%;padding:8px 10px;border:1.5px solid #cfe3da;background:#f1f8f5;border-radius:8px;font-size:14px;color:#1f2a24;text-align:left;box-shadow:none;cursor:pointer}
+#modal .tchip:hover{border-color:#c95057;background:#fdf1f1}
+#modal .tchip i{width:10px;height:10px;border-radius:50%}
+#modal .tchip .cn{font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#modal .tchip b{white-space:nowrap;font-weight:700}
+#modal .tchip .cx{color:#9aa5ad;font-size:16px;line-height:1}
+#modal .tradewin .ttotal{border-top:1px solid #e3e7ea;padding-top:8px}
+/* Ремонт / проверка: клетка в штриховке, полоска тёмная */
+#game #board .cell.closed .pic,#game #board .cell.closed .meta{opacity:.45}
+#game #board .cell.closed::after{content:"";position:absolute;inset:0;border-radius:2px;background:repeating-linear-gradient(135deg,#f2b70533 0 8px,transparent 8px 16px);pointer-events:none}
+#game #board .cell.closed .pr.rent{background:#3a4045!important}

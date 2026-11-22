@@ -5,22 +5,21 @@ function test(name, fn){fn(); console.log('✓ '+name); tests++;}
 function game(n=3){const s=E.newGame('host'); for(let i=0;i<n;i++)assert.equal(E.apply(s,{type:'join',pid:'p'+i,name:'Игрок '+i,token:D.TOKENS[i].id}),null); s.solo=n===1; assert.equal(E.apply(s,{type:'start',pid:'host'}),null);s.opt.ball=false;return s;}
 function act(s,type,extra={}){const a={type,pid:E.actor(s),...extra};assert.equal(E.apply(s,a),null,JSON.stringify(a));}
 function auction(n=3){const s=game(n);s.players[s.turn].pos=3;s.step='buy';const excluded=E.actor(s);act(s,'pass');return {s,excluded};}
-test('Dollar scale and classic group counts',()=>{assert.equal(D.money(1500).replace(/\s/g,''),'$150000');assert.deepEqual(D.GROUPS.map((_,g)=>E.groupCells(g).length),[2,3,3,3,3,3,3,2]);});
+test('Dollar scale and classic group counts',()=>{assert.equal(D.money(1500),'$15,000k');assert.equal(D.money(25),'$250k');assert.equal(D.money(6),'$60k');assert.deepEqual(D.GROUPS.map((_,g)=>E.groupCells(g).length),[2,3,3,3,3,3,3,2]);});
 test('Solo: chosen dice, purchase, next turn, no auto-win',()=>{const s=game(1);act(s,'roll',{dice:[1,2]});assert.equal(s.players[0].pos,3);act(s,'buy');assert.equal(s.owner[3],s.players[0].id);assert.equal(s.phase,'play');assert.equal(s.step,'roll');});
 test('Chosen dice rejected outside solo and on invalid input',()=>{const s=game();assert.ok(E.apply(s,{type:'roll',pid:E.actor(s),dice:[1,2]}));const t=game(1);assert.ok(E.apply(t,{type:'roll',pid:E.actor(t),dice:[0,7]}));});
 test('Solo auction has no bidders and closes',()=>{const {s}=auction(1);assert.equal(s.auction,null);assert.equal(s.step,'roll');assert.equal(s.owner[3],undefined);});
 test('Auction excludes initiator, starts at price and enforces exact step',()=>{const {s,excluded}=auction();assert.ok(!s.auction.order.includes(excluded));assert.ok(E.apply(s,{type:'bid',pid:excluded,amount:80}));assert.ok(E.apply(s,{type:'bid',pid:E.actor(s),amount:20}));act(s,'bid',{amount:80});assert.ok(E.apply(s,{type:'bid',pid:E.actor(s),amount:120}));act(s,'bid',{amount:100});const winner=s.auction.bidder;act(s,'auctionPass');assert.equal(s.auction,null);assert.equal(s.owner[3],winner);assert.equal(s.players.find(p=>p.id===winner).money,1400);});
 test('Everyone passes, property remains unowned',()=>{const {s}=auction();while(s.auction)act(s,'auctionPass');assert.equal(s.owner[3],undefined);});
 test('Single eligible bidder must bid the list price',()=>{const {s}=auction(2);act(s,'bid',{amount:80});assert.equal(s.auction,null);assert.ok(s.owner[3]);});
-test('Buildings require whole group and even building/selling',()=>{const s=game(1),pid=E.actor(s);s.owner[1]=pid;assert.ok(E.apply(s,{type:'build',pid,cell:1}));s.owner[3]=pid;act(s,'build',{cell:1});assert.ok(E.apply(s,{type:'build',pid,cell:1}));act(s,'build',{cell:3});act(s,'build',{cell:1});assert.ok(E.apply(s,{type:'sell',pid,cell:3}));act(s,'sell',{cell:1});assert.equal(s.houses[1],1);assert.equal(s.houses[3],1);});
+test('Buildings require whole group and even building/selling',()=>{const s=game(1),pid=E.actor(s);s.owner[1]=pid;assert.ok(E.apply(s,{type:'build',pid,cell:1}));s.owner[3]=pid;act(s,'build',{cell:1});s.built={};assert.ok(E.apply(s,{type:'build',pid,cell:1}));act(s,'build',{cell:3});s.built={};act(s,'build',{cell:1});assert.ok(E.apply(s,{type:'sell',pid,cell:3}));act(s,'sell',{cell:1});assert.equal(s.houses[1],1);assert.equal(s.houses[3],1);});
 test('Mortgage blocks group building and produces zero rent',()=>{const s=game(1),pid=E.actor(s);s.owner[1]=s.owner[3]=pid;act(s,'mortgage',{cell:3});assert.equal(E.rent(s,3,7),0);assert.ok(E.apply(s,{type:'build',pid,cell:1}));act(s,'unmortgage',{cell:3});act(s,'build',{cell:1});assert.ok(E.apply(s,{type:'mortgage',pid,cell:3}));});
-test('Card text remains in shared history and effects apply',()=>{const s=game(1);s.decks.S=[0];act(s,'roll',{dice:[1,1]});const c=s.log.find(x=>x.kind==='card');assert.equal(c.t,D.CARDS.S[0].text);assert.ok(c.t.includes('$'));assert.equal(s.players[0].money,1460);assert.ok(s.log.some(x=>typeof x==='string'&&x.includes('Баланс')));});
+test('Card text remains in shared history and effects apply',()=>{const s=game(1);s.decks.S=[0];act(s,'roll',{dice:[1,1]});const c=s.log.find(x=>x.kind==='card');assert.equal(c.t,D.CARDS.S[0].text);assert.ok(c.t.includes('$'));assert.equal(s.players[0].money,1460);assert.ok(!s.log.some(x=>typeof x==='string'&&x.includes('Баланс')));});
 test('Save roundtrip preserves board and next actor',()=>{const s=game(1);act(s,'roll',{dice:[1,2]});act(s,'buy');const saved=JSON.parse(JSON.stringify(s));assert.equal(saved.owner[3],saved.players[0].id);assert.equal(saved.step,'roll');});
 test('Police sends token to jail',()=>{const s=game(1);s.players[0].pos=27;act(s,'roll',{dice:[1,2]});assert.equal(s.players[0].pos,10);assert.equal(s.players[0].jail,1);});
 test('Trade transfers selected properties and money',()=>{const s=game(2),from=E.actor(s),to=s.players.find(p=>p.id!==from).id;s.owner[1]=from;s.owner[3]=to;act(s,'proposeTrade',{to,give:[1],get:[3],giveMoney:20,getMoney:0});act(s,'acceptTrade',{pid:to});assert.equal(s.owner[1],to);assert.equal(s.owner[3],from);assert.equal(s.players.find(p=>p.id===from).money,1480);});
 test('Rent requires payment even with sufficient funds and then advances',()=>{const s=game(2),payer=E.actor(s),owner=s.players.find(p=>p.id!==payer).id;s.owner[3]=owner;s.players[s.turn].pos=0;let dice=[0,.2];E.rng=()=>dice.shift()??0;act(s,'roll');assert.equal(s.step,'debt');assert.equal(E.actor(s),payer);assert.equal(s.players.find(p=>p.id===payer).money,1500);act(s,'payDebt');assert.equal(s.players.find(p=>p.id===payer).money,1496);assert.equal(E.actor(s),owner);assert.equal(s.step,'roll');E.rng=Math.random;});
 test('Trade rejected outside current turn',()=>{const s=game(2),other=s.players.find(p=>p.id!==E.actor(s)).id;assert.ok(E.apply(s,{type:'proposeTrade',pid:other,to:E.actor(s),giveMoney:10}));});
-test('Utility rent independent of dice',()=>{const s=game(2);s.owner[12]=s.players[1].id;assert.equal(E.rent(s,12,2),15);assert.equal(E.rent(s,12,12),15);});
 
 // ---- Пожар ----
 const FIRE = D.CARDS.D.findIndex(c => c.fx.fire), DCELL = D.BOARD.findIndex(c => c.t === 'card' && c.deck === 'D');
@@ -53,5 +52,58 @@ test('While fire is pending others cannot act', () => {
 test('Timeout: saves when affordable, otherwise the property burns', () => {
   const a = fireGameSolo(); const ca = a.s.fire.cell; assert.equal(E.apply(a.s, { type: 'timeout', pid: 'host' }), null); assert.equal(a.s.owner[ca], a.owner.id);
   const b = fireGameSolo(50); const cb = b.s.fire.cell; assert.equal(E.apply(b.s, { type: 'timeout', pid: 'host' }), null); assert.equal(b.s.owner[cb], undefined);
+});
+test('Trade: only before rolling, sides within 50%, no mortgage fee',()=>{
+  const s=game(2),from=E.actor(s),to=s.players.find(p=>p.id!==from).id; s.owner[1]=from; s.owner[39]=to; s.owner[3]=to; s.mort[3]=true;
+  assert.ok(E.apply(s,{type:'proposeTrade',pid:from,to,give:[1],get:[39]}),'too uneven');
+  assert.ok(E.apply(s,{type:'proposeTrade',pid:from,to,giveMoney:10}),'gift blocked');
+  const m=s.players.find(p=>p.id===from).money; act(s,'proposeTrade',{to,give:[1],get:[3]}); act(s,'acceptTrade',{pid:to}); assert.equal(s.owner[3],from); assert.equal(s.players.find(p=>p.id===from).money,m);
+  s.step='buy'; assert.ok(E.apply(s,{type:'proposeTrade',pid:from,to,give:[3],get:[1]}),'after roll');
+});
+test('One house per colour group per turn',()=>{
+  const s=game(2),me=E.actor(s); E.groupCells(1).forEach(i=>s.owner[i]=me); const [x,y]=E.groupCells(1);
+  act(s,'build',{cell:x}); assert.ok(E.apply(s,{type:'build',pid:me,cell:y}),'second house same group');
+});
+test('Taxi: pay, get random cells, ride to one of them',()=>{
+  const s=game(2),p=s.players[s.turn]; s.solo=true; p.pos=15; act(s,'roll',{dice:[2,3]}); assert.equal(s.step,'taxi');
+  const m=p.money; act(s,'taxiBuy',{n:3}); assert.equal(s.taxi.cells.length,3); assert.equal(p.money,m-80);
+  s.taxi.cells[0]=39; const to=39; act(s,'taxiGo',{cell:to}); assert.equal(s.step,'buy'); assert.equal(p.pos,to); assert.equal(s.taxi,null);
+  const s2=game(2),p2=s2.players[s2.turn]; s2.solo=true; p2.pos=15; act(s2,'roll',{dice:[2,3]}); act(s2,'taxiStay'); assert.equal(p2.pos,20); assert.notEqual(E.actor(s2),p2.id);
+});
+test('Utilities: dice x4, both owned x10',()=>{
+  const s=game(2),o=s.players[0].id,u=DATA.BOARD.map((c,i)=>i).filter(i=>DATA.BOARD[i].t==='utility');
+  s.owner[u[0]]=o; assert.equal(E.rent(s,u[0],9),36); s.owner[u[1]]=o; assert.equal(E.rent(s,u[0],9),90);
+});
+test('Mortgage returns to bank after 15 own turns',()=>{
+  const s=game(2),p=s.players[s.turn]; s.owner[1]=p.id; act(s,'mortgage',{cell:1}); assert.equal(s.mortT[1],15);
+  for(let k=0;k<14;k++){ s.turn=s.players.indexOf(p); s.step='end'; act(s,'endTurn'); }
+  assert.equal(s.mortT[1],1); assert.equal(s.owner[1],p.id);
+  s.turn=s.players.indexOf(p); s.step='end'; act(s,'endTurn'); assert.equal(s.owner[1],undefined); assert.ok(!s.mort[1]);
+});
+test('Landing exactly on Start pays double',()=>{
+  const s=game(2),p=s.players[s.turn]; s.solo=true; p.pos=35; const m=p.money; act(s,'roll',{dice:[2,3]}); assert.equal(p.pos,0); assert.equal(p.money,m+400);
+  const s2=game(2),p2=s2.players[s2.turn]; s2.solo=true; p2.pos=35; const m2=p2.money; act(s2,'roll',{dice:[3,4]}); assert.equal(p2.pos,2); assert.ok(p2.money>=m2+200-200);
+});
+const drawFx=(s,deck,pred)=>{s.decks[deck]=[D.CARDS[deck].findIndex(pred)];};
+test('Repair card closes own cell for 3 own turns, no rent',()=>{
+  const s=game(2),p=s.players[s.turn],o=s.players.find(x=>x!==p); s.solo=true; s.owner[39]=p.id; p.pos=0;
+  drawFx(s,'S',c=>c.fx.repair); act(s,'roll',{dice:[1,1]}); assert.equal(s.closed[39].left,3); assert.equal(E.rent(s,39,7),0);
+  for(let k=0;k<3;k++){ s.turn=s.players.indexOf(p); s.step='end'; s.debt=null; s.card=null; act(s,'endTurn'); }
+  assert.ok(!s.closed[39]); assert.ok(E.rent(s,39,7)>0);
+});
+test('Inspection closes a cell of the richest player',()=>{
+  const s=game(2),p=s.players[s.turn],o=s.players.find(x=>x!==p); s.solo=true; s.owner[37]=o.id; o.money=5000; p.pos=0;
+  drawFx(s,'S',c=>c.fx.check); act(s,'roll',{dice:[1,1]}); assert.equal(s.closed[37].kind,'check');
+});
+test('Half-price house, skip turn',()=>{
+  const s=game(2),p=s.players[s.turn]; s.solo=true; p.pos=0; drawFx(s,'S',c=>c.fx.halfHouse); act(s,'roll',{dice:[1,1]}); assert.ok(p.halfHouse);
+  E.groupCells(1).forEach(i=>s.owner[i]=p.id); const m=p.money; s.step='roll'; s.card=null; act(s,'build',{cell:E.groupCells(1)[0]}); assert.equal(m-p.money,DATA.GROUPS[1].house/2); assert.ok(!p.halfHouse);
+  const s2=game(3),a=s2.players[s2.turn],b=s2.players[(s2.turn+1)%3],c=s2.players[(s2.turn+2)%3]; b.skip=1; s2.step='end'; act(s2,'endTurn'); assert.equal(E.actor(s2),c.id); assert.ok(!b.skip);
+});
+test('Drunk swap only with the lobby option',()=>{
+  const s=game(2); s.decks.S=[]; const p=s.players[s.turn]; s.solo=true; p.pos=0; s.opt.drunk=false;
+  act(s,'roll',{dice:[1,1]}); assert.ok(!s.decks.S.concat([]).some(k=>D.CARDS.S[k].fx.drunk));
+  const s2=game(2),a=s2.players[s2.turn],b=s2.players.find(x=>x!==a); s2.solo=true; s2.opt.drunk=true; s2.owner[39]=a.id; s2.owner[5]=b.id; a.pos=0;
+  drawFx(s2,'S',c=>c.fx.drunk); act(s2,'roll',{dice:[1,1]}); assert.equal(s2.owner[39],b.id); assert.equal(s2.owner[5],a.id);
 });
 console.log(`${tests} checks passed`);

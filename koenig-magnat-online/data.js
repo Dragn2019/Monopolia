@@ -2,14 +2,14 @@
 // Можно менять тексты, цены и добавлять свои карточки, не трогая остальной код.
 (function (root) {
   const GROUPS = [
-    { name: 'Перекус', color: '#a9683f', house: 50 },
-    { name: 'Утро и картинг', color: '#2fa9e0', house: 50 },
-    { name: 'Кино и зоопарк', color: '#e0569f', house: 100 },
-    { name: 'Середнячки', color: '#f08530', house: 100 },
-    { name: 'Ночная жизнь', color: '#e5484d', house: 150 },
-    { name: 'Прогулки', color: '#dba514', house: 150 },
-    { name: 'Открытки', color: '#2aa566', house: 200 },
-    { name: 'Море', color: '#4263eb', house: 200 },
+    { name: 'Перекус', color: '#a86f4c', house: 50 },
+    { name: 'Утро и картинг', color: '#6fbfe5', house: 50 },
+    { name: 'Кино и зоопарк', color: '#de8cbe', house: 100 },
+    { name: 'Середнячки', color: '#e0954f', house: 100 },
+    { name: 'Ночная жизнь', color: '#c95057', house: 150 },
+    { name: 'Прогулки', color: '#d9b651', house: 150 },
+    { name: 'Открытки', color: '#61b99e', house: 200 },
+    { name: 'Море', color: '#5a87d6', house: 200 },
   ];
 
   const P = (name, icon, g, price, rent) => ({ t: 'prop', name, icon, g, price, rent });
@@ -19,7 +19,7 @@
   const S = { t: 'card', deck: 'S', name: 'Сторис', icon: '📱' };
 
   const BOARD = [
-    { t: 'start', name: 'Площадь Победы', icon: '🏁', note: 'Старт: +200 за каждый круг' },
+    { t: 'start', name: 'Площадь Победы', icon: '🏁', note: 'Старт: +$2,000k за каждый круг. Встал ровно сюда — +$4,000k' },
     P('Шаверма у Гамлета', '🌯', 0, 60, [2, 10, 30, 90, 160, 250]),
     S,
     P('Мясная тема', '🥩', 0, 80, [4, 20, 60, 180, 320, 450]),
@@ -39,7 +39,7 @@
     S,
     P('ТЦ «Европа»', '🛍️', 3, 180, [14, 70, 200, 550, 750, 950]),
     P('ТЦ «Кловер»', '🍀', 3, 200, [16, 80, 220, 600, 800, 1000]),
-    { t: 'parking', name: 'Парковка у Дома Советов', icon: '🅿️', note: 'Здесь копится общак из штрафов. Кто встал, тот забрал' },
+    { t: 'parking', name: 'Такси у Дома Советов', icon: '🚕', note: 'Встал сюда — можешь вызвать такси. Заплати, и тебе выпадут случайные поля: выбираешь одно и едешь туда. Чем дороже тариф, тем больше вариантов' },
     P('Клуб «Иксы»', '❌', 4, 220, [18, 90, 250, 700, 875, 1050]),
     D,
     P('Зажигалка', '💃', 4, 220, [18, 90, 250, 700, 875, 1050]),
@@ -64,13 +64,15 @@
   const LUMEN = 11;
   const CLUBS = [16, 21, 23, 24];
 
+  // Фишки: цветной рисунок на белом круге, кольцо — цвет игрока
+  const W = (c, x, y, r) => `<circle fill="#1d2326" cx="${x}" cy="${y}" r="${r}"/><circle fill="#c9d0d5" cx="${x}" cy="${y}" r="${r * .42}"/>`;
   const TOKENS = [
-    { id: 'honda', name: 'Honda Семёна', color: '#e5484d', svg: '<path d="M3 15l2.2-5.5A2 2 0 0 1 7 8.2h8.2a2 2 0 0 1 1.7.9L19.5 13l1.8.6a1 1 0 0 1 .7 1V17H2v-1a1 1 0 0 1 1-1z"/><circle cx="7" cy="17.5" r="2.2" fill="#fff"/><circle cx="17" cy="17.5" r="2.2" fill="#fff"/>' },
-    { id: 'bingo', name: 'Бинго', color: '#f2b705', text: 'БИНГО' },
-    { id: 'yujiro', name: 'Юдзиро', color: '#7b3fe4', svg: '<path d="M13.5 2L5 13.5h5.5L9.5 22 19 9.5h-5.8z"/>' },
-    { id: 'kiario', name: 'Kia Rio', color: '#12a594', svg: '<path d="M2 15.2l1.6-.5 3.2-4a2 2 0 0 1 1.6-.7h5.4a2 2 0 0 1 1.4.6l3.6 3.4 2.5.6a1 1 0 0 1 .7 1V17H2z"/><circle cx="6.8" cy="17.5" r="2.1" fill="#fff"/><circle cx="17.2" cy="17.5" r="2.1" fill="#fff"/>' },
-    { id: 'isuzu', name: 'Исузу', color: '#3a6ff2', svg: '<path d="M2 7h11v9H2zM14 10h4.2L22 13.5V16h-8z"/><circle cx="6.5" cy="17.5" r="2.2" fill="#fff"/><circle cx="17.5" cy="17.5" r="2.2" fill="#fff"/>' },
-    { id: 'chelsea', name: 'Челси', color: '#30a46c', svg: '<path d="M4.5 4l4.2 2.6A7 7 0 0 1 12 6a7 7 0 0 1 3.3.6L19.5 4l-.6 6.2c.4.8.6 1.8.6 2.8a7.5 7.5 0 0 1-15 0c0-1 .2-2 .6-2.8z"/><circle cx="9.3" cy="12" r="1.1" fill="#fff"/><circle cx="14.7" cy="12" r="1.1" fill="#fff"/><ellipse cx="12" cy="15.6" rx="1.6" ry="1.1" fill="#fff"/>' },
+    { id: 'honda', name: 'Honda Семёна', color: '#e5484d', art: '<path fill="#e5484d" d="M4 33v-5.500c0-1.700 1.100-3 2.800-3.300L14 23l5.200-6.600c.8-1 2-1.600 3.300-1.600h9.300c1.400 0 2.700.7 3.500 1.900L39.500 23l3.300.8c1.300.3 2.200 1.500 2.200 2.900V33z"/><path fill="#b8323a" d="M4 29.500h41V33H4z"/><path fill="#cfeaff" d="M17.300 23l3.800-5c.4-.5 1-.8 1.600-.8H27V23zM29 17.200h3c.7 0 1.300.3 1.700.9L37 23h-8z"/><rect fill="#ffd166" x="41.500" y="25" width="3.500" height="2.200" rx="1"/>' + W(0, 13, 33, 5) + W(0, 36, 33, 5) },
+    { id: 'school5', name: '5 школа', color: '#f29d16', art: '<path fill="#f29d16" d="M5 43V22h38v21z"/><path fill="#c4511f" d="M2.500 23.500 24 9l21.500 14.500z"/><path stroke="#1d2326" stroke-width="1.600" d="M24 10V2.500"/><path fill="#e5484d" d="M24.800 2.500h6.500l-1.800 2.200 1.800 2.200h-6.500z"/><path fill="#fff" d="M8.500 26h6v5h-6zM33.500 26h6v5h-6zM8.500 35h6v5h-6zM33.500 35h6v5h-6z"/><circle fill="#fff" cx="24" cy="30" r="8.500"/><text x="24" y="35" text-anchor="middle" font-size="14" font-weight="900" fill="#c4511f" font-family="Unbounded,Nunito,system-ui,sans-serif">5</text>' },
+    { id: 'yujiro', name: 'Юдзиро', color: '#7b3fe4', art: '<rect fill="#7b3fe4" x="10" y="13" width="7.500" height="14" rx="3.700"/><rect fill="#7b3fe4" x="17" y="10.500" width="7.500" height="15" rx="3.700"/><rect fill="#7b3fe4" x="24" y="11" width="7.500" height="14.500" rx="3.700"/><rect fill="#7b3fe4" x="31" y="13.500" width="7" height="13" rx="3.500"/><rect fill="#7b3fe4" x="10" y="19" width="28" height="17" rx="6"/><path fill="#a678f7" d="M8 26.500C8 24.600 9.600 23 11.500 23H26a3.500 3.500 0 0 1 0 7H11.500C9.600 30 8 28.400 8 26.500z"/><path stroke="#4b2390" stroke-width="1.600" fill="none" stroke-linecap="round" d="M17.300 13.500v5.500M24.300 13v6M31.300 14v5.500"/><rect fill="#2c1b52" x="13" y="35" width="22" height="8" rx="2"/><path fill="#ffd166" d="M42 3l-5 7.500h3.300l-2.300 6.500 6.500-9h-3.500z"/>' },
+    { id: 'kiario', name: 'Kia Rio', color: '#12a594', art: '<path fill="#12a594" d="M8 37v-8.500c0-1.600.8-3 2.200-3.800L13.500 16c.6-1.800 2.300-3 4.200-3h12.600c1.900 0 3.600 1.200 4.200 3l3.300 8.700c1.400.8 2.200 2.200 2.200 3.800V37z"/><path fill="#cfeaff" d="m15.800 23.500 2.200-6.200c.3-.8 1-1.300 1.800-1.300h8.400c.8 0 1.500.5 1.800 1.300l2.200 6.200z"/><ellipse fill="#fff" cx="13.300" cy="29.300" rx="3" ry="2"/><ellipse fill="#fff" cx="34.700" cy="29.300" rx="3" ry="2"/><rect fill="#0b6b60" x="18.500" y="29.500" width="11" height="3.500" rx="1.700"/><rect fill="#1d2326" x="9" y="35.500" width="7" height="6.500" rx="2"/><rect fill="#1d2326" x="32" y="35.500" width="7" height="6.500" rx="2"/><rect fill="#0b6b60" x="8" y="34.500" width="32" height="3" rx="1.500"/>' },
+    { id: 'isuzu', name: 'Исузу', color: '#3a6ff2', art: '<rect fill="#3a6ff2" x="3" y="11" width="27" height="21" rx="2"/><path fill="#fff" opacity=".4" d="M3 24h27v3H3z"/><path fill="#2a55c4" d="M31 15h7.500c1 0 2 .5 2.500 1.400L45 23v9H31z"/><path fill="#cfeaff" d="M33.500 17.500h5c.4 0 .8.2 1 .6l2.700 4.900h-8.700z"/><rect fill="#ffd166" x="43" y="26" width="2" height="2.500"/><rect fill="#1d2326" x="3" y="31" width="42" height="3" rx="1"/>' + W(0, 10, 35, 4.500) + W(0, 19.500, 35, 4.500) + W(0, 38, 35, 4.500) },
+    { id: 'chelsea', name: 'Челси', color: '#30a46c', art: '<path fill="#6b4226" d="M9 11c3-3 8-2 10 1l-2 15c-3 2-8 1-10-3-1.500-4-.5-10 2-13zM39 11c-3-3-8-2-10 1l2 15c3 2 8 1 10-3 1.500-4 .5-10-2-13z"/><ellipse fill="#c98b4b" cx="24" cy="24" rx="12" ry="13"/><ellipse fill="#f3dcc0" cx="24" cy="30" rx="7.500" ry="6"/><circle fill="#1d2326" cx="19.500" cy="21" r="1.900"/><circle fill="#1d2326" cx="28.500" cy="21" r="1.900"/><ellipse fill="#1d2326" cx="24" cy="27" rx="2.800" ry="2"/><path fill="#ff7a8a" d="M22 32h4v3a2 2 0 0 1-4 0z"/><path fill="#30a46c" d="M13.500 37.500c6.500 3 14.500 3 21 0v4c-6.500 3-14.500 3-21 0z"/><circle fill="#ffd166" cx="24" cy="42.500" r="2.100"/>' },
   ];
 
   // Эффекты карточек:
@@ -95,6 +97,7 @@
       { text: 'Виталик прислал мем из Испании. Ты залип и проехал 4 клетки вперёд.', fx: { by: 4 } },
       { text: 'Завтрак в ВДНХ лечит всё. Отправляйся в кафе ВДНХ.', fx: { to: 6 } },
       { text: 'Вот такая вот х**ня, собачка. Ничего не произошло.', fx: {} },
+      { text: 'Перекрыли Ленинский проспект ради марафона. Стоишь и пропускаешь следующий ход.', fx: { skip: true } },
     ],
     S: [
       { text: 'Съел шаву у Гамлета. Она была так себе. Заплати 40 за аптеку.', fx: { money: -40 } },
@@ -113,16 +116,23 @@
       { text: 'Выиграл в бинго в баре. Получи 200.', fx: { money: 200 } },
       { text: 'Камера на Московском проспекте не дремлет. Штраф 80.', fx: { money: -80 } },
       { text: 'Туристы спросили дорогу к могиле Канта, ты провёл экскурсию. Получи 60.', fx: { money: 60 } },
+      { text: 'Сторис с дачи: кто-то оставил мангал без присмотра, и в городе пожар! Огонь выбирает случайное поле с постройками. Владелец может потушить его за 300, иначе постройки сгорят, а поле вернётся банку.', fx: { fire: true } },
+      { text: 'Трубы прорвало, приехала аварийка. Случайный твой участок уходит на ремонт на 3 твоих хода — аренду он не берёт.', fx: { repair: 3 } },
+      { text: 'Роспотребнадзор с внезапной проверкой. У самого богатого игрока закрывают случайный участок на 2 его хода — без аренды.', fx: { check: 2 } },
+      { text: 'Андрей знает прораба, который «сделает по-братски». Следующий дом построишь за полцены.', fx: { halfHouse: true } },
+      { text: 'Вечер в баре затянулся. Наутро выясняется, что ты по пьяни поменялся с соседом: случайный твой участок на случайный его.', fx: { drunk: true } },
     ],
   };
 
   // One engine unit represents $100; keeping units preserves existing saved balances.
-  const money = (n) => '$\u00a0' + Math.round(n * 100).toLocaleString('ru-RU');
+  // Как в Монополии One: 1 единица движка = 10k. Старт $15,000k, улица 600k, аренда 20k
+  const kfmt = (n) => { const k = Math.round(n * 10); return k ? k.toLocaleString('en-US') + 'k' : '0'; };
+  const money = (n) => '$' + kfmt(n);
   for (const deck of Object.values(CARDS)) for (const card of deck) {
     card.text = card.text.replace(/\b\d+\b/g, (n) => +n >= 20 ? money(+n) : n);
   }
-  BOARD[0].note = 'Старт: ' + money(200) + ' за каждый круг';
-  const DATA = { money, GROUPS, BOARD, TOKENS, CARDS, LUMEN, CLUBS, AUCTION_STEP: 20, START_MONEY: 1500, LAP: 200, JAIL: 10, JAIL_FEE: 50, BALL_BONUS: 50, FIRE_COST: 300 };
+  BOARD[0].note = 'Старт: ' + money(200) + ' за каждый круг. Встал ровно сюда — ' + money(400);
+  const DATA = { money, kfmt, GROUPS, BOARD, TOKENS, CARDS, LUMEN, CLUBS, AUCTION_STEP: 20, START_MONEY: 1500, LAP: 200, LAP_EXACT: 400, JAIL: 10, JAIL_FEE: 50, BALL_BONUS: 50, FIRE_COST: 300, MORT_TURNS: 15, TAXI: [{ n: 1, cost: 30 }, { n: 3, cost: 80 }, { n: 5, cost: 150 }] };
   if (typeof module !== 'undefined') module.exports = DATA;
   root.DATA = DATA;
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -13,8 +13,8 @@
 
   E.newGame = (hostId) => ({
     version: 2, phase: 'lobby', hostId, players: [], turn: 0, step: 'roll', dice: [0, 0], doubles: 0, again: false, rolls: 0,
-    owner: {}, houses: {}, mort: {}, pot: 0, ball: -1, decks: { D: [], S: [] },
-    opt: { timer: 60, pot: false, ball: true },
+    owner: {}, houses: {}, mort: {}, mortT: {}, closed: {}, pot: 0, ball: -1, decks: { D: [], S: [] },
+    opt: { timer: 60, pot: false, ball: true, drunk: false },
     auction: null, trade: null, debt: null, fire: null, card: null, log: [], ev: [], seq: 0, winner: null, final: null, afk: null, deadline: 0,
   });
 
@@ -38,13 +38,16 @@
   };
   E.rent = (s, i, diceSum) => {
     const c = BOARD[i], o = s.owner[i];
-    if (!o || s.mort[i]) return 0;
+    if (!o || s.mort[i] || (s.closed && s.closed[i])) return 0;
     if (c.t === 'transport') return 25 * 2 ** (countType(s, o, 'transport') - 1);
-    if (c.t === 'utility') return BOARD[i].price * 0.1;
+    if (c.t === 'utility') return E.utilMult(s, i) * (diceSum || 7);
     const h = s.houses[i] || 0;
     if (h) return c.rent[h];
     return ownsGroup(s, o, c.g) ? c.rent[0] * 2 : c.rent[0];
   };
+  // Как в классике: одно предприятие — кубики ×4 (40k), оба — кубики ×10 (100k)
+  E.houseCost = (s, p, c) => (p && p.halfHouse ? GROUPS[c.g].house / 2 : GROUPS[c.g].house);
+  E.utilMult = (s, i) => (s.owner[i] && countType(s, s.owner[i], 'utility') >= 2 ? 10 : 4);
   E.netWorth = (s, p) => {
     let w = p.money;
     BOARD.forEach((c, i) => {
@@ -63,7 +66,7 @@
     return cur(s).id;
   };
   // Ключ «чей сейчас выбор»: когда он меняется, таймер хода запускается заново
-  E.turnKey = (s) => (s.phase !== 'play' ? '' : [E.actor(s), s.step, s.rolls, s.auction ? s.auction.bid + ':' + s.auction.order.length : '', s.debt ? 1 : 0, s.fire ? 'f' + s.fire.cell : ''].join('|'));
+  E.turnKey = (s) => (s.phase !== 'play' ? '' : [E.actor(s), s.step, s.rolls, s.auction ? s.auction.bid + ':' + s.auction.order.length : '', s.debt ? 1 : 0, s.fire ? 'f' + s.fire.cell : '', s.taxi && s.taxi.cells ? 't' : ''].join('|'));
 
   function transfer(s, p, amount, to) {
     p.money -= amount;
@@ -86,7 +89,8 @@
     const from = p.pos;
     ev(s, { t: 'move', pid: p.id, from, to, mode: mode || 'walk' });
     p.pos = to;
-    if (lap && to < from) { log(s, `${p.name} проходит старт: +${money(DATA.LAP)}`); ev(s, { t: 'lap', pid: p.id }); gain(s, p, DATA.LAP); }
+    // Встал ровно на Старт — двойная выплата, как в популярном домашнем правиле Монополии
+    if (lap && to < from) { const x = to === 0 ? DATA.LAP_EXACT : DATA.LAP; log(s, to === 0 ? `${p.name} встаёт ровно на старт: +${money(x)}` : `${p.name} проходит старт: +${money(x)}`); ev(s, { t: 'lap', pid: p.id }); gain(s, p, x); }
   }
   function toJail(s, p) {
     ev(s, { t: 'move', pid: p.id, from: p.pos, to: DATA.JAIL, mode: 'jump' });
@@ -105,10 +109,43 @@
     if (p.bankrupt) return nextTurn(s);
     if (s.again && !p.jail) s.step = 'roll'; else nextTurn(s);
   }
+  // Залог живёт 15 ходов владельца. Не выкупил — участок уходит банку и снова продаётся
+  function tickMortgages(s, p) {
+    if (!p || p.bankrupt) return;
+    s.mortT = s.mortT || {};
+    Object.keys(s.mort).map(Number).filter((i) => s.mort[i] && s.owner[i] === p.id).forEach((i) => {
+      const left = (s.mortT[i] ?? DATA.MORT_TURNS) - 1;
+      if (left > 0) { s.mortT[i] = left; return; }
+      delete s.owner[i]; delete s.mort[i]; delete s.mortT[i]; delete s.houses[i];
+      ev(s, { t: 'released', pid: p.id, cell: i });
+      log(s, `«${BOARD[i].name}» ${DATA.MORT_TURNS} ходов пролежал в залоге — уходит банку и снова продаётся`);
+    });
+  }
+  // Ремонт и проверка: клетка не берёт аренду N ходов своего владельца
+  function tickClosed(s, p) {
+    if (!s.closed || !p) return;
+    Object.keys(s.closed).map(Number).forEach((i) => {
+      if (!s.owner[i]) { delete s.closed[i]; return; }
+      if (s.owner[i] !== p.id) return;
+      const left = s.closed[i].left - 1;
+      if (left > 0) s.closed[i] = Object.assign({}, s.closed[i], { left });
+      else { delete s.closed[i]; log(s, `«${BOARD[i].name}» снова открыт и берёт аренду`); }
+    });
+  }
+  function closeCell(s, i, kind, turns) {
+    s.closed = Object.assign({}, s.closed, { [i]: { kind, left: turns } });
+    ev(s, { t: 'closed', cell: i, kind });
+  }
   function nextTurn(s) {
-    s.trade = null; s.tradeDeadline = 0;
+    tickMortgages(s, cur(s)); tickClosed(s, cur(s));
+    s.trade = null; s.tradeDeadline = 0; s.taxi = null; s.built = {};
     s.again = false; s.doubles = 0;
-    do { s.turn = (s.turn + 1) % s.players.length; } while (cur(s).bankrupt);
+    for (let guard = 0; guard < s.players.length * 2; guard++) {
+      s.turn = (s.turn + 1) % s.players.length;
+      const p = cur(s); if (p.bankrupt) continue;
+      if (p.skip) { p.skip = 0; log(s, `${p.name} стоит в пробке на Эстакадном мосту и пропускает ход`); ev(s, { t: 'skip', pid: p.id }); continue; }
+      break;
+    }
     s.step = 'roll';
     ev(s, { t: 'turn', pid: cur(s).id });
   }
@@ -125,6 +162,7 @@
       const o = s.owner[i];
       if (!o) { s.step = 'buy'; ev(s, { t: 'offer', pid: p.id, cell: i }); return false; }
       if (o === p.id || s.mort[i]) return true;
+      if (s.closed && s.closed[i]) { log(s, `«${c.name}» ${s.closed[i].kind === 'check' ? 'закрыт на проверку' : 'на ремонте'} — ${p.name} проходит бесплатно`); return true; }
       const r = E.rent(s, i, s.dice[0] + s.dice[1]) * (mult || 1);
       log(s, `${p.name} платит ${money(r)} игроку ${P(s, o).name} за «${c.name}»`);
       s.debt = {pid:p.id,amount:r,to:o}; s.step='debt'; return false;
@@ -133,13 +171,15 @@
     if (c.t === 'gotojail') { toJail(s, p); return true; }
     if (c.t === 'parking') {
       if (s.pot > 0) { log(s, `${p.name} забирает общак с парковки: +${money(s.pot)}`); gain(s, p, s.pot); s.pot = 0; }
-      return true;
+      // Такси: заплати — и выбирай, куда уехать, из случайных полей. Чем дороже, тем больше вариантов
+      s.taxi = { pid: p.id, cells: null }; s.step = 'taxi';
+      return false;
     }
     if (c.t === 'card') return drawCard(s, p, c.deck);
     return true;
   }
   function drawCard(s, p, deck) {
-    if (!s.decks[deck].length) s.decks[deck] = shuffle(CARDS[deck].map((_, k) => k));
+    if (!s.decks[deck].length) s.decks[deck] = shuffle(CARDS[deck].map((_, k) => k).filter((k) => !CARDS[deck][k].fx.drunk || s.opt.drunk));
     const k = s.decks[deck].shift(), card = CARDS[deck][k], fx = card.fx;
     s.card = { deck, text: card.text, by: p.id, n: s.seq };
     ev(s, { t: 'card', deck, text: card.text, pid: p.id });
@@ -187,6 +227,34 @@
       return true;
     }
     if (fx.ball) { if (s.ball < 0) return true; moveTo(s, p, s.ball, true); return land(s, p); }
+    const mine = (id) => BOARD.map((c, i) => i).filter((i) => s.owner[i] === id && !s.mort[i] && !(s.closed && s.closed[i]));
+    if (fx.repair) {
+      const list = mine(p.id);
+      if (!list.length) { log(s, 'Ремонтировать нечего, повезло'); return true; }
+      const i = list[rnd(list.length)]; closeCell(s, i, 'repair', fx.repair);
+      log(s, `«${BOARD[i].name}» уходит на ремонт на ${fx.repair} хода ${p.name}: аренды нет`);
+      return true;
+    }
+    if (fx.check) {
+      const rich = alive(s).slice().sort((a, b) => E.netWorth(s, b) - E.netWorth(s, a))[0], list = mine(rich.id);
+      if (!list.length) { log(s, `Проверять у ${rich.name} нечего`); return true; }
+      const i = list[rnd(list.length)]; closeCell(s, i, 'check', fx.check);
+      log(s, `Роспотребнадзор закрывает «${BOARD[i].name}» у самого богатого — ${rich.name} — на ${fx.check} хода`);
+      return true;
+    }
+    if (fx.halfHouse) { p.halfHouse = true; log(s, `${p.name}: следующий дом за полцены`); return true; }
+    if (fx.skip) { p.skip = 1; log(s, `${p.name} пропустит следующий ход`); return true; }
+    if (fx.drunk) {
+      const order = alive(s), nb = order[(order.indexOf(p) + 1) % order.length];
+      const free = (id) => BOARD.map((c, i) => i).filter((i) => s.owner[i] === id && !(BOARD[i].t === 'prop' && groupHouses(s, BOARD[i].g).some((h) => h)));
+      const a = free(p.id), b = nb && nb !== p ? free(nb.id) : [];
+      if (!a.length || !b.length) { log(s, 'Меняться нечем — все трезвые'); return true; }
+      const x = a[rnd(a.length)], y = b[rnd(b.length)];
+      s.owner[x] = nb.id; s.owner[y] = p.id;
+      ev(s, { t: 'drunk', a: x, b: y });
+      log(s, `${p.name} и ${nb.name} по пьяни меняются: «${BOARD[x].name}» ↔ «${BOARD[y].name}»`);
+      return true;
+    }
     return true;
   }
 
@@ -197,7 +265,7 @@
     BOARD.forEach((c, i) => {
       if (s.owner[i] !== p.id) return;
       if (s.houses[i]) { if (cred) cred.money += (s.houses[i] * GROUPS[c.g].house) / 2; delete s.houses[i]; }
-      if (cred) { s.owner[i] = cred.id; if (s.mort[i]) fee += mortFee(i); } else { delete s.owner[i]; delete s.mort[i]; }
+      if (cred) { s.owner[i] = cred.id; if (s.mort[i]) fee += mortFee(i); } else { delete s.owner[i]; delete s.mort[i]; if (s.mortT) delete s.mortT[i]; }
     });
     if (cred) { cred.money += Math.max(0, p.money); cred.jailCards += p.jailCards; cred.money -= Math.min(fee, cred.money); }
     p.money = 0; p.jailCards = 0; p.bankrupt = true; p.jail = 0;
@@ -211,7 +279,7 @@
   // Отказ от спасения: постройки сносятся, поле возвращается банку и снова продаётся по обычной цене
   function burnDown(s) {
     const f = s.fire, c = BOARD[f.cell], o = P(s, f.pid);
-    delete s.houses[f.cell]; delete s.owner[f.cell]; delete s.mort[f.cell];
+    delete s.houses[f.cell]; delete s.owner[f.cell]; delete s.mort[f.cell]; if (s.mortT) delete s.mortT[f.cell];
     s.fire = null;
     ev(s, { t: 'burned', cell: f.cell, pid: o.id });
     log(s, `«${c.name}» сгорело: постройки снесены, поле вернулось в банк и снова продаётся`);
@@ -234,16 +302,18 @@
     s.auction = null;
     finishMove(s);
   }
-  // Комиссия за полученные заложенные клетки: 10% от залога сразу, как в официальных правилах
-  const tradeFee = (list, s) => list.reduce((x, i) => x + (s.mort[i] ? mortFee(i) : 0), 0);
+  // Цена стороны обмена: участки по цене покупки (заложенный — половина) плюс доплата
+  const tradeValue = (s, list, m) => (list || []).reduce((x, i) => x + (s.mort[i] ? BOARD[i].price / 2 : BOARD[i].price), 0) + (m || 0);
   function tradeErr(s, t) {
     const a = P(s, t.from), b = P(s, t.to);
     if (!a || !b || a.bankrupt || b.bankrupt || a === b) return 'Некому предлагать';
     const ok = (list, pid) => Array.isArray(list) && list.every((i) => s.owner[i] === pid && (BOARD[i].t !== 'prop' || groupHouses(s, BOARD[i].g).every((h) => !h)));
     if (!ok(t.give, a.id) || !ok(t.get, b.id)) return 'Нельзя менять клетки с постройками в группе или чужие клетки';
     if (!(t.giveMoney >= 0) || !(t.getMoney >= 0)) return 'Неверная сумма';
-    if (a.money + t.getMoney < t.giveMoney + tradeFee(t.get, s) || b.money + t.giveMoney < t.getMoney + tradeFee(t.give, s)) return 'Не хватает денег на обмен (за заложенные клетки сразу платится 10% залога)';
+    if (a.money < t.giveMoney || b.money < t.getMoney) return 'Не хватает денег на обмен';
     if (!t.give.length && !t.get.length && !t.giveMoney && !t.getMoney) return 'Пустой обмен';
+    const A = tradeValue(s, t.give, t.giveMoney), B = tradeValue(s, t.get, t.getMoney);
+    if (Math.min(A, B) < Math.max(A, B) * 0.5) return 'Обмен слишком неравный: стороны не могут отличаться больше чем на 50%';
     return null;
   }
   const myTurn = (s, a) => (s.phase === 'play' && cur(s).id === a.pid ? null : 'Сейчас не твой ход');
@@ -273,6 +343,7 @@
       if ([0, 30, 60, 90, 120].includes(o.timer)) s.opt.timer = o.timer;
       if (typeof o.pot === 'boolean') s.opt.pot = o.pot;
       if (typeof o.ball === 'boolean') s.opt.ball = o.ball;
+      if (typeof o.drunk === 'boolean') s.opt.drunk = o.drunk;
     },
     start(s, a) {
       if (s.phase !== 'lobby') return 'Игра уже идёт';
@@ -310,6 +381,29 @@
       } else s.again = false;
       moveTo(s, p, (p.pos + sum) % 40, true);
       if (land(s, p)) finishMove(s);
+    },
+    taxiBuy(s, a) {
+      const e = myTurn(s, a); if (e) return e;
+      if (s.step !== 'taxi' || !s.taxi || s.taxi.cells) return 'Такси сейчас не вызвать';
+      const opt = DATA.TAXI.find((o) => o.n === a.n); if (!opt) return 'Нет такого тарифа';
+      const p = cur(s); if (p.money < opt.cost) return 'Не хватает денег на такси';
+      transfer(s, p, opt.cost, null);
+      s.taxi.cells = shuffle(BOARD.map((_, i) => i).filter((i) => i !== p.pos)).slice(0, opt.n);
+      ev(s, { t: 'taxi', pid: p.id, cells: s.taxi.cells });
+      log(s, `${p.name} вызывает такси. Варианты: ${s.taxi.cells.map((i) => '«' + BOARD[i].name + '»').join(', ')}`);
+    },
+    taxiGo(s, a) {
+      const e = myTurn(s, a); if (e) return e;
+      if (s.step !== 'taxi' || !s.taxi || !s.taxi.cells || !s.taxi.cells.includes(a.cell)) return 'Туда такси не едет';
+      const p = cur(s); s.taxi = null; s.step = 'move';
+      log(s, `${p.name} едет на такси в «${BOARD[a.cell].name}»`);
+      moveTo(s, p, a.cell, false, 'jump');
+      if (land(s, p)) finishMove(s);
+    },
+    taxiStay(s, a) {
+      const e = myTurn(s, a); if (e) return e;
+      if (s.step !== 'taxi' || !s.taxi || s.taxi.cells) return 'Нельзя';
+      s.taxi = null; finishMove(s);
     },
     buy(s, a) {
       const e = myTurn(s, a); if (e) return e;
@@ -359,15 +453,17 @@
       const i = a.cell, c = BOARD[i], p = P(s, a.pid);
       if (!c || c.t !== 'prop' || !ownsGroup(s, p.id, c.g)) return 'Сначала собери всю цветную группу';
       if (groupCells(c.g).some((k) => s.mort[k])) return 'В группе есть заложенные клетки';
+      if (s.built && s.built[c.g]) return 'В этой группе уже строил в этот ход: один дом на группу за ход';
       const h = s.houses[i] || 0;
       if (h >= 5) return 'Здесь уже отель — максимальный уровень';
       if (h > Math.min(...groupHouses(s, c.g))) return 'Сначала улучши остальные участки группы до этого уровня';
       const bank = E.bank(s);
       if (h < 4 && bank.houses < 1) return 'В городе кончились свободные дома: их всего 32. Жди, пока кто-нибудь продаст';
       if (h === 4 && bank.hotels < 1) return 'В городе кончились отели: их всего 12';
-      const cost = GROUPS[c.g].house;
+      const cost = E.houseCost(s, p, c);
       if (p.money < cost) return 'Не хватает денег';
-      p.money -= cost; s.houses[i] = h + 1;
+      if (p.halfHouse) { p.halfHouse = false; log(s, `${p.name} строит со знакомым прорабом за полцены`); }
+      p.money -= cost; s.houses[i] = h + 1; s.built = Object.assign({}, s.built, { [c.g]: true });
       ev(s, { t: 'build', pid: p.id, cell: i, amount: cost });
       log(s, `${p.name} ${h === 4 ? 'строит отель' : 'строит дом'} на «${c.name}»`);
     },
@@ -390,7 +486,7 @@
       const i = a.cell, c = BOARD[i];
       if (s.owner[i] !== a.pid || s.mort[i]) return 'Нельзя заложить';
       if (c.t === 'prop' && groupHouses(s, c.g).some((h) => h)) return 'Сначала продай постройки в группе';
-      s.mort[i] = true; P(s, a.pid).money += mortVal(i);
+      s.mort[i] = true; s.mortT = Object.assign({}, s.mortT, { [i]: DATA.MORT_TURNS }); P(s, a.pid).money += mortVal(i);
       ev(s, { t: 'mortgage', pid: a.pid, cell: i, amount: mortVal(i) });
       log(s, `${P(s, a.pid).name} закладывает «${c.name}»`);
     },
@@ -399,7 +495,7 @@
       const i = a.cell, p = P(s, a.pid), cost = E.unmortCost(i);
       if (s.owner[i] !== a.pid || !s.mort[i]) return 'Клетка не заложена';
       if (p.money < cost) return 'Не хватает денег';
-      p.money -= cost; delete s.mort[i];
+      p.money -= cost; delete s.mort[i]; if (s.mortT) delete s.mortT[i];
       ev(s, { t: 'unmortgage', pid: p.id, cell: i, amount: cost });
       log(s, `${p.name} выкупает «${BOARD[i].name}»`);
     },
@@ -468,6 +564,7 @@
       if (s.trade) return 'Сначала закончите текущий обмен';
       if (s.auction) return 'Дождись конца аукциона';
       if (s.fire) return 'Сначала решите судьбу горящего поля';
+      if (s.step !== 'roll' || s.debt) return 'Обмен можно предложить только до броска кубиков';
       const t = { from: a.pid, to: a.to, give: a.give || [], get: a.get || [], giveMoney: Math.floor(a.giveMoney || 0), getMoney: Math.floor(a.getMoney || 0), n: s.seq };
       const e = tradeErr(s, t); if (e) return e;
       s.trade = t;
@@ -479,7 +576,7 @@
       if (!t || t.to !== a.pid) return 'Нет предложения';
       const e = tradeErr(s, t); if (e) { s.trade = null; return; }
       const x = P(s, t.from), y = P(s, t.to);
-      x.money += t.getMoney - t.giveMoney - tradeFee(t.get, s); y.money += t.giveMoney - t.getMoney - tradeFee(t.give, s);
+      x.money += t.getMoney - t.giveMoney; y.money += t.giveMoney - t.getMoney;
       t.give.forEach((i) => (s.owner[i] = y.id)); t.get.forEach((i) => (s.owner[i] = x.id));
       s.trade = null;
       ev(s, { t: 'deal', from: x.id, to: y.id });
@@ -495,8 +592,9 @@
     chat(s, a) {
       const p = P(s, a.pid), text = String(a.text || '').trim().slice(0, 140);
       if (!p || !text) return 'Пустое сообщение';
-      log(s, { c: p.id, t: text });
-      ev(s, { t: 'chat', pid: p.id, text });
+      const to = a.to && a.to !== p.id && P(s, a.to) ? a.to : null;
+      log(s, to ? { c: p.id, t: text, to } : { c: p.id, t: text });
+      ev(s, to ? { t: 'chat', pid: p.id, text, to } : { t: 'chat', pid: p.id, text });
     },
     emo(s, a) {
       if (!P(s, a.pid) || !EMO.includes(a.e)) return 'Нет такой эмоции';
@@ -511,7 +609,7 @@
       log(s, `Ход игрока ${cur(s).name} пропущен`);
       if (s.fire) return void burnDown(s);
       if (s.debt) return void doBankrupt(s, P(s, s.debt.pid));
-      s.auction = null; nextTurn(s);
+      s.auction = null; s.taxi = null; nextTurn(s);
     },
     // Время вышло: игра сама делает ход за игрока. Кубики бросаются, от покупки отказ с аукционом, ставка = пас
     timeout(s, a) {
@@ -532,6 +630,7 @@
       }
       if (s.step === 'roll') return H.roll(s, { pid: id });
       if (s.step === 'buy') return H.pass(s, { pid: id });
+      if (s.step === 'taxi') return s.taxi && s.taxi.cells ? H.taxiGo(s, { pid: id, cell: s.taxi.cells[0] }) : H.taxiStay(s, { pid: id });
       return H.endTurn(s, { pid: id });
     },
   };
@@ -543,15 +642,11 @@
     const err = h(s, a);
     if (err) return err;
     if (s.afk && a.pid === s.afk && a.type !== 'timeout' && a.type !== 'chat' && a.type !== 'emo') s.afk = null;
-    for (const e of s.ev) {
-      if (e.t === 'pay') log(s, `${P(s, e.from).name}: −${money(e.amount)} → ${e.to && P(s, e.to) ? P(s, e.to).name : e.to === 'pot' ? 'парковка' : 'банк'}. Баланс ${money(P(s, e.from).money)}`);
-      if (e.t === 'gain') log(s, `${P(s, e.pid).name}: +${money(e.amount)}. Баланс ${money(P(s, e.pid).money)}`);
-    }
     if (s.phase === 'play' && s.step === 'end' && !s.debt && !s.auction && !s.fire) nextTurn(s);
     s.seq++;
     return null;
   };
-  E.groupCells = groupCells; E.ownsGroup = ownsGroup; E.buyable = buyable; E.EMO = EMO; E.mortFee = mortFee;
+  E.groupCells = groupCells; E.ownsGroup = ownsGroup; E.buyable = buyable; E.EMO = EMO; E.mortFee = mortFee; E.tradeValue = tradeValue;
   if (typeof module !== 'undefined') module.exports = E;
   root.Engine = E;
 })(typeof window !== 'undefined' ? window : globalThis);

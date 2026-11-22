@@ -14,20 +14,28 @@ let S = null, V = null, mode = null, myPid = null, code = null, peer = null, con
 const conns = {}, queue = [];
 let pumping = false, busy = false, boardBuilt = false, pickedToken = null, unread = 0, LC = 11, LR = 11, tokPos = {}, lastKey = '', tradeN = null, lastTick = -1;
 
-const tokOf = (id) => TOKENS.find((t) => t.id === id);
-const tokHTML = (t) => `<span class="tk" style="background:${t.color}"><svg viewBox="0 0 24 24" fill="#fff">${t.text ? `<text x="12" y="14.4" text-anchor="middle" font-size="6.4" font-weight="900" fill="#231a00" textLength="20" lengthAdjust="spacingAndGlyphs">${t.text}</text>` : t.svg}</svg></span>`;
+const tokOf = (id) => TOKENS.find((t) => t.id === id) || TOKENS[0];
+const tokHTML = (t) => `<span class="tk" style="--tc:${t.color}"><svg viewBox="0 0 48 48" aria-hidden="true">${t.art}</svg></span>`;
+const EMOJI = ['😂', '🤣', '😅', '😎', '😏', '🤔', '😮', '😡', '😭', '🥲', '🤑', '😴', '👍', '👎', '👏', '🙏', '🤝', '💪', '🔥', '💀', '🎉', '❤️', '💸', '🍀', '🎲', '🏠', '🚗', '🐶', '🍺', '☕'];
 const PL = (id) => (V ? V.players.find((p) => p.id === id) : null);
 const isHost = () => mode !== 'client';
 const me = () => (mode === 'local' ? (V && V.phase === 'play' ? Engine.actor(V) : null) : myPid);
 const randId = () => 'p' + Math.random().toString(36).slice(2, 10);
 const randCode = () => Array.from({ length: 5 }, () => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[Math.floor(Math.random() * 32)]).join('');
-const cellColor = (c) => (c.t === 'prop' ? GROUPS[c.g].color : c.t === 'transport' ? '#5b6b8c' : c.t === 'utility' ? '#0f9b94' : c.t === 'card' ? (c.deck === 'D' ? '#7357e8' : '#c2255c') : '#2a3b5f');
+const cellColor = (c) => (c.t === 'prop' ? GROUPS[c.g].color : c.t === 'transport' ? '#666d77' : c.t === 'utility' ? '#927cd6' : c.t === 'card' ? (c.deck === 'D' ? '#7357e8' : '#c2255c') : '#2a3b5f');
 const cellKind = (c) => (c.t === 'prop' ? `Группа «${GROUPS[c.g].name}»` : c.t === 'transport' ? 'Транспорт' : c.t === 'utility' ? 'Предприятие' : '');
 
 function toast(m) { const t = $('#toast'); t.textContent = m; t.classList.remove('hide'); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.add('hide'), 2800); Snd.play('err'); }
 let modalFn = null;
-function closeModal() { $('#modal').classList.remove('trade-mode'); $$('.cell').forEach(c => c.classList.remove('selected-trade'));  $('#modal').classList.add('hide'); $('#modal').innerHTML = ''; modalFn = null; }
-function openModal(fn) { modalFn = fn; $('#modal').classList.remove('hide'); fn(); }
+function closeModal() { $('#modal').classList.remove('trade-mode'); $$('.cell').forEach(c => c.classList.remove('selected-trade'));  $('#modal').classList.add('hide'); $('#modal').innerHTML = ''; modalFn = null; markTrade(); }
+function openModal(fn) { const m = $('#modal'); modalFn = fn; m.classList.remove('hide', 'shown'); fn(); clearTimeout(openModal.t); openModal.t = setTimeout(() => m.classList.add('shown'), 260); }
+// Повторная отрисовка окна при новом состоянии: без анимации, с тем же скроллом и фокусом
+function rerenderModal() {
+  const w = $('#modal .win'), top = w ? w.scrollTop : 0, ae = document.activeElement, id = ae && ae.id && $('#modal').contains(ae) ? ae.id : null, sel = id && 'selectionStart' in ae ? [ae.selectionStart, ae.selectionEnd] : null;
+  modalFn();
+  const w2 = $('#modal .win'); if (w2) w2.scrollTop = top;
+  if (id) { const el = document.getElementById(id); if (el) { el.focus(); try { if (sel) el.setSelectionRange(sel[0], sel[1]); } catch (e) {} } }
+}
 $('#modal').addEventListener('click', (e) => { if (e.target.id === 'modal') closeModal(); });
 
 /* ---------- Звук: всё синтезируется на лету, файлов нет ---------- */
@@ -111,7 +119,12 @@ function commit() {
   armTimers();
   const json = JSON.stringify(S), snap = JSON.parse(json);
   if (mode === 'local') LS.set('km_local_v2', json);
-  if (mode === 'host') { LS.set('km_state_' + code, json); Object.values(conns).forEach((c) => { if (c.open) c.send({ t: 'state', s: snap, now: Date.now() }); }); }
+  if (mode === 'host') {
+    LS.set('km_state_' + code, json);
+    const priv = snap.log.some((x) => x && x.to) || (snap.ev || []).some((e) => e.to);
+    const seen = (x, pid, by) => !x || typeof x !== 'object' || !x.to || x.to === pid || x[by] === pid;
+    Object.entries(conns).forEach(([pid, c]) => { if (!c.open) return; const v = priv ? Object.assign({}, snap, { log: snap.log.filter((x) => seen(x, pid, 'c')), ev: (snap.ev || []).filter((e) => e.t !== 'chat' || seen(e, pid, 'pid')) }) : snap; c.send({ t: 'state', s: v, now: Date.now() }); });
+  }
   enqueue(snap);
 }
 setInterval(() => {
@@ -257,10 +270,10 @@ async function pump() {
   pumping = false;
 }
 function noteChat(e, ns) {
+  if (e.to && mode !== 'local' && e.to !== myPid && e.pid !== myPid) return;
   const p = ns.players.find((x) => x.id === e.pid);
   if (mode === 'local' || e.pid !== myPid) Snd.play('pop');
-  if (!$('#hub') || !$('#hub').classList.contains('feedopen')) { unread++; }
-  if (p) bubble(e.pid, e.text);
+  if (p && !$('#game').classList.contains('mode-wide')) bubble(e.pid, e.text);
 }
 async function playEvents(ns) {
   const mine = (id) => mode !== 'local' && id === myPid;
@@ -361,7 +374,7 @@ function render() {
   if (!mode) return show('home');
   if (!V || V.phase === 'lobby') { show('lobby'); return renderLobby(); }
   show('game'); renderGame();
-  if (modalFn) modalFn();
+  if (modalFn) rerenderModal();
 }
 function renderLobby() {
   const box = $('#lobbybox');
@@ -385,8 +398,9 @@ function renderLobby() {
     <button id="bset" class="${mine ? '' : 'primary'}">${mode === 'local' ? 'Добавить игрока' : mine ? 'Сохранить имя и фишку' : 'Сесть за стол'}</button>
     <div class="opts">
       <div class="opt"><span>Таймер хода<small>Не успел — игра сходит за тебя</small></span><div class="seg">${seg}</div></div>
-      <div class="opt"><span>Общак на парковке<small>Домашнее правило: штрафы копятся</small></span><button class="sw2 ${o.pot ? 'on' : ''}" data-opt="pot" ${host ? '' : 'disabled'}></button></div>
+      <div class="opt"><span>Общак у Дома Советов<small>Домашнее правило: штрафы копятся</small></span><button class="sw2 ${o.pot ? 'on' : ''}" data-opt="pot" ${host ? '' : 'disabled'}></button></div>
       <div class="opt"><span>Мячик Челси<small>+${money(DATA.BALL_BONUS)} тому, кто встал на клетку с мячиком</small></span><button class="sw2 ${o.ball ? 'on' : ''}" data-opt="ball" ${host ? '' : 'disabled'}></button></div>
+      <div class="opt"><span>Обмен по пьяни<small>Карточка «Сторис»: твой случайный участок меняется со случайным участком соседа</small></span><button class="sw2 ${o.drunk ? 'on' : ''}" data-opt="drunk" ${host ? '' : 'disabled'}></button></div>
     </div>
     ${host ? `<button class="primary" id="bstart" ${V.players.length < (V.solo ? 1 : 2) ? 'disabled' : ''}>Начать игру (${V.players.length}/6)</button>` : '<p class="sub">Ждём, пока создатель комнаты начнёт игру</p>'}
     <button class="ghost sm" id="brulesL">Правила</button>`;
@@ -429,48 +443,86 @@ function buildBoard() {
     const d = document.createElement('div');
     d.dataset.kind = c.t; d.dataset.index = i; d.dataset.side = i < 10 ? 'top' : i < 20 ? 'right' : i < 30 ? 'bottom' : 'left';
     d.className = 'cell' + (Engine.buyable(c) || c.t === 'card' ? '' : ' special'); d.id = 'c' + i; d.style.setProperty('--g', cellColor(c));
-    const pr = c.price ? money(c.price) : '';  
-    d.innerHTML = `<div class="pic">${c.t === 'gotojail' ? '<svg viewBox="0 0 48 48" class="art"><path fill="#597d9b" d="M24 3 42 11v13c0 12-18 21-18 21S6 36 6 24V11z"/><path fill="#f3cc72" d="m24 12 4 8 9 1-7 6 2 9-8-5-8 5 2-9-7-6 9-1z"/></svg>' : c.t === 'jail' ? '<svg viewBox="0 0 80 50" class="art"><g stroke="#52677b" stroke-width="3"><path d="M8 22h25v23H8zM15 22v23M25 22v23" fill="none"/></g><circle cx="59" cy="17" r="13" fill="#d9a46c"/><circle cx="59" cy="16" r="11" fill="#e9a4b6"/><circle cx="59" cy="17" r="4" fill="#fff7e7"/><path d="m51 11 3 1m10-2-1 3m4 6-3 2m-12 0 2 3" stroke="#fff4ba" stroke-width="2"/></svg>' : c.t === 'card' ? '<span class="event-question">?</span>' : Art.cell(i)}</div><div class="meta"><div class="nm">${esc(c.name)}</div></div>${pr ? `<div class="pr" aria-label="Цена покупки ${pr}">${pr}</div>` : `<span class="cell-type">${c.t === 'card' ? 'СОБЫТИЕ' : c.t === 'tax' ? 'ПЛАТЁЖ' : c.t === 'start' ? '+' + money(DATA.LAP) : ''}</span>`}`;
+    const pr = c.price ? DATA.kfmt(c.price) : '';
+    d.innerHTML = `<div class="pic">${c.t === 'gotojail' ? '<svg viewBox="0 0 48 48" class="art"><path fill="#55636b" d="M24 3 42 11v13c0 12-18 21-18 21S6 36 6 24V11z"/><path fill="#d9b651" d="m24 12 4 8 9 1-7 6 2 9-8-5-8 5 2-9-7-6 9-1z"/></svg>' : c.t === 'jail' ? '<svg viewBox="0 0 80 50" class="art"><g stroke="#55636b" stroke-width="3"><path d="M8 22h25v23H8zM15 22v23M25 22v23" fill="none"/></g><circle cx="59" cy="17" r="13" fill="#d9b651"/><circle cx="59" cy="16" r="11" fill="#b98a2e"/><circle cx="59" cy="17" r="4" fill="#fff"/><path d="m51 11 3 1m10-2-1 3m4 6-3 2m-12 0 2 3" stroke="#f3e3b0" stroke-width="2"/></svg>' : c.t === 'card' ? '<span class="event-question">?</span>' : c.t === 'start' ? Art.art('startbig') : Art.cell(i)}</div><div class="meta"><div class="nm">${esc(c.name)}</div></div>${pr ? `<div class="pr" aria-label="Цена покупки ${pr}">${pr}</div>` : `<span class="cell-type">${c.t === 'card' ? 'СОБЫТИЕ' : c.t === 'tax' ? 'ПЛАТЁЖ' : c.t === 'start' ? '+' + money(DATA.LAP) : ''}</span>`}`;
     d.setAttribute('role', 'button'); d.tabIndex = 0; d.setAttribute('aria-label', c.name);
-    d.onclick = () => { if ($('#modal').classList.contains('trade-mode')) return selectTradeCell(i); openModal(() => cellModal(i)); };
+    d.onclick = () => { if ($('#modal').classList.contains('trade-mode')) return selectTradeCell(i); if (d.classList.contains('taxi-opt') && V && V.taxi && me() === V.players[V.turn].id) return act('taxiGo', { cell: i });
+    if (pickMode) { if (d.classList.contains('pickable')) return openModal(() => pickConfirm(i)); if (V.owner[i] === me()) return toast(actionError(V.houses[i] ? 'sell' : 'mortgage', i) || 'Нельзя'); return toast('Это не твой участок'); } openModal(() => cellModal(i)); };
     d.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); d.click(); } };
     b.appendChild(d);
   });
   const hub = document.createElement('div'); hub.id = 'hub';
   hub.innerHTML = `<div class="hubin">
-    <div class="hubtop"><div class="brand">Кёниг <b>Магнат</b></div><div class="room" id="room"></div>
-      <div class="tools"><button id="bfeed" title="Чат">${IC.chat}<span class="badge hide" id="unread"></span></button><button id="bsound" title="Звук"></button><button id="bhelp" title="Правила">${IC.help}</button><button id="bmenu" title="Меню">${IC.menu}</button></div></div>
-    <div id="players"></div>
-    <div id="stage"><div id="dice"><div class="die">${'<i></i>'.repeat(9)}</div><div class="die">${'<i></i>'.repeat(9)}</div></div><div id="spot"></div><div id="tradebar" class="hide"></div><div id="actions"></div><div id="timer" class="off"><i></i></div><div id="mini"></div></div>
-    <div id="feed"><div class="feedhead"><span>Чат и события</span><button class="sm ghost" id="bfeedx">Закрыть</button></div><div id="feedlist" role="log" aria-label="Чат и события"></div><button id="feednew" class="sm hide">↓ Новые события</button>
-      <div id="emos">${Engine.EMO.map((e) => `<button data-e="${e}">${e}</button>`).join('')}</div>
-      <form id="chatform"><input id="chatin" maxlength="140" placeholder="Написать в чат" autocomplete="off"><button class="primary" aria-label="Отправить">➤</button></form></div>
+    <div id="stage"><div id="dice"><div class="die">${'<i></i>'.repeat(9)}</div><div class="die">${'<i></i>'.repeat(9)}</div></div><div id="spot"></div><div id="actions"></div><div id="timer" class="off"><i></i></div></div>
+    <div id="feed"><div id="feedlist" role="log" aria-label="Чат и события"></div><button id="feednew" class="sm hide">↓ Новые</button>
+      <div id="emopanel" class="hide">${EMOJI.map((e) => `<button type="button" data-em="${e}">${e}</button>`).join('')}</div>
+      <form id="chatform"><select id="chatto" aria-label="Кому"><option value="">Всем</option></select><input id="chatin" maxlength="140" placeholder="Введите сообщение" autocomplete="off"><button type="button" id="bemoji" aria-label="Смайлики">🙂</button><button class="primary" aria-label="Отправить">➤</button></form></div>
+    <div id="tradebar" class="hide"></div>
   </div>`;
   b.appendChild(hub);
-  $('#bfeed').onclick = () => { hub.classList.add('feedopen'); unread = 0; renderTop(); scrollFeed(true); };
+  let left = $('#leftcol');
+  if (!left) { left = document.createElement('div'); left.id = 'leftcol'; $('#game').insertBefore(left, $('#boardwrap')); }
+  left.innerHTML = `<div id="players"></div><div class="tools"><button id="bsound" title="Звук"></button><button id="bhelp" title="Правила">${IC.help}</button><button id="bmenu" title="Меню">${IC.menu}</button></div><div class="room" id="room"></div>`;
   $('#feednew').onclick = () => scrollFeed(true);
   $('#feedlist').onscroll = () => { const l = $('#feedlist'); if (l.scrollHeight - l.scrollTop - l.clientHeight < 30) $('#feednew').classList.add('hide'); };
-  $('#bfeedx').onclick = () => hub.classList.remove('feedopen');
-  $('#mini').onclick = () => $('#bfeed').click();
   $('#bsound').onclick = () => { Snd.toggle(); renderTop(); };
   $('#bhelp').onclick = () => openModal(rulesModal);
   $('#bmenu').onclick = () => openModal(menuModal);
-  $('#emos').onclick = (e) => { const b2 = e.target.closest('[data-e]'); if (b2) act('emo', { e: b2.dataset.e }); };
-  $('#chatform').onsubmit = (e) => { e.preventDefault(); const i = $('#chatin'), t = i.value.trim(); if (t) { act('chat', { text: t }); i.value = ''; } };
+  const ep = $('#emopanel');
+  $('#bemoji').onclick = () => ep.classList.toggle('hide');
+  ep.onclick = (e) => { const b2 = e.target.closest('[data-em]'); if (!b2) return; const inp = $('#chatin'), a = inp.selectionStart ?? inp.value.length, z = inp.selectionEnd ?? a; inp.value = (inp.value.slice(0, a) + b2.dataset.em + inp.value.slice(z)).slice(0, 140); inp.focus(); const k = a + b2.dataset.em.length; try { inp.setSelectionRange(k, k); } catch (er) {} };
+  document.addEventListener('pointerdown', (e) => { if (!ep.classList.contains('hide') && !e.target.closest('#emopanel,#bemoji')) ep.classList.add('hide'); });
+  $('#chatform').onsubmit = (e) => { e.preventDefault(); const i2 = $('#chatin'), t = i2.value.trim(), to = $('#chatto').value; if (t) { act('chat', to ? { text: t, to } : { text: t }); i2.value = ''; ep.classList.add('hide'); } };
   setDice([1, 1]);
   boardBuilt = true; layout();
 }
 function layout() {
   if (!boardBuilt) return;
-  const wrap = $('#boardwrap'), w = wrap.clientWidth, h = wrap.clientHeight; if (!w || !h) return;
+  const game = $('#game'), wrap = $('#boardwrap'), hubin = $('.hubin'), left = $('#leftcol'), feed = $('#feed'), stage = $('#stage');
+  const W = innerWidth, H = innerHeight;
+  const mode = W >= 720 && W > H * 0.95 ? 'wide' : 'narrow';
+  game.classList.remove('mode-wide', 'mode-medium', 'mode-narrow'); game.classList.add('mode-' + mode);
+  const compact = mode === 'wide' && W < 1100; game.classList.toggle('compact', compact);
+  // Широкий экран: слева игроки, справа доска, чат и действия — в центре доски
+  if (mode === 'wide') {
+    if (stage.parentNode !== hubin) hubin.insertBefore(stage, hubin.firstChild);
+    if (feed.parentNode !== hubin) hubin.insertBefore(feed, stage.nextSibling);
+    if (left.nextSibling !== wrap) game.insertBefore(left, wrap);
+    if ($('#tradebar').parentNode !== hubin) hubin.appendChild($('#tradebar'));
+  } else if (stage.parentNode !== game) game.append(stage, $('#tradebar'), left, feed);
+  const pad = mode === 'narrow' ? 4 : 14, gap = 14, colw = compact ? 150 : 190;
+  let bs, bw;
+  if (mode === 'wide') { const room = W - pad * 2 - gap - colw; bs = Math.min(H - pad * 2, room); bw = Math.min(room, Math.round(bs * 1.5)); }
+  else { bs = W - pad * 2; bw = bs; }
+  bs = Math.max(300, Math.floor(bs)); bw = Math.max(bs, Math.floor(bw));
+  const strip = Math.round(Math.max(14, Math.min(26, bs * 0.03)));
+  game.style.setProperty('--bs', bs + 'px'); game.style.setProperty('--bw', bw + 'px'); game.style.setProperty('--strip', strip + 'px'); game.style.setProperty('--colw', colw + 'px');
   LC = 11; LR = 11;
-  const b = $('#board'); b.style.gridTemplateColumns = '1.35fr repeat(9,minmax(0,1fr)) 1.35fr'; b.style.gridTemplateRows = '1.35fr repeat(9,minmax(0,1fr)) 1.35fr';
+  const b = $('#board'); b.style.gridTemplateColumns = '1.8fr repeat(9,minmax(0,1fr)) 1.8fr'; b.style.gridTemplateRows = '1.8fr repeat(9,minmax(0,1fr)) 1.8fr';
   BOARD.forEach((c, i) => { const [r, col] = cellRC(i), d = document.getElementById('c' + i); d.style.gridRow = r + 1; d.style.gridColumn = col + 1; });
   const hub = $('#hub'); hub.style.gridColumn = `2 / ${LC}`; hub.style.gridRow = `2 / ${LR}`;
-  wrap.style.setProperty('--ts', Math.max(18, Math.min(w / LC, h / LR) * 0.25) + 'px');
+  const cellSize = (bs - strip * 2) / 12.6;
+  const wasTiny = game.classList.contains('tiny');
+  game.classList.toggle('tiny', cellSize < 50);
+  if (wasTiny !== game.classList.contains('tiny') && V && V.phase !== 'lobby') renderBoard();
+  wrap.style.setProperty('--ts', Math.round(Math.max(16, cellSize * 0.42)) + 'px');
   placeTokens();
 }
 window.addEventListener('resize', layout);
+// Обмен на поле: что отдаёшь — приподнято с «−», что получаешь — с «+»
+function markTrade() {
+  $$('.cell .trb').forEach((b) => b.remove());
+  $$('.cell.tr-out,.cell.tr-in').forEach((c) => c.classList.remove('tr-out', 'tr-in'));
+  if (!V) return;
+  let out = [], inn = [];
+  if ($('#modal').classList.contains('trade-mode') && trade) { out = [...trade.give]; inn = [...trade.get]; }
+  else if (V.trade) {
+    const t = V.trade, my = me();
+    if (mode === 'local' || my === t.to) { out = t.get; inn = t.give; } else if (my === t.from) { out = t.give; inn = t.get; }
+  }
+  const put = (i, cls, sign) => { const d = document.getElementById('c' + i); if (!d) return; d.classList.add(cls); const b = document.createElement('span'); b.className = 'trb'; b.textContent = sign + DATA.kfmt(V.mort[i] ? BOARD[i].price / 2 : BOARD[i].price); d.appendChild(b); };
+  out.forEach((i) => put(i, 'tr-out', '−')); inn.forEach((i) => put(i, 'tr-in', '+'));
+}
 function placeTokens() {
   if (!V) return;
   const wrap = $('#boardwrap'), ts = parseFloat(wrap.style.getPropertyValue('--ts')) || 30, by = {};
@@ -480,7 +532,11 @@ function placeTokens() {
     const pos = tokPos[p.id] || 0, grp = by[pos] || [p.id], k = Math.max(0, grp.indexOf(p.id)), n = grp.length, [r, c] = cellRC(pos);
     const dx = n > 1 ? ((k % 3) - (Math.min(n, 3) - 1) / 2) * ts * 0.62 : 0, dy = n > 3 ? (Math.floor(k / 3) - 0.5) * ts * 0.7 : 0;
     const cell = document.getElementById('c' + pos);
-    t.style.left = (cell.offsetLeft + cell.offsetWidth * .8 + dx) + 'px'; t.style.top = (cell.offsetTop + cell.offsetHeight * .25 + dy) + 'px';
+    // фишка стоит на рисунке клетки и не закрывает название
+    const sd = cell.dataset.side, corner = pos % 10 === 0;
+    // фишка — в свободном углу клетки, не закрывает ни рисунок, ни название
+    const fx = corner ? .5 : sd === 'left' ? .86 : sd === 'right' ? .14 : .8, fy = corner ? .5 : sd === 'top' ? .2 : sd === 'bottom' ? .22 : .22;
+    t.style.left = (cell.offsetLeft + cell.offsetWidth * fx + dx) + 'px'; t.style.top = (cell.offsetTop + cell.offsetHeight * fy + dy) + 'px';
   });
 }
 function setDice(d) {
@@ -495,13 +551,24 @@ function renderBoard() {
     d.classList.toggle('mort', !!V.mort[i]);
     d.classList.toggle('owned', !!op);
     d.classList.toggle('full-group', !!op && c.t === 'prop' && Engine.ownsGroup(V, o, c.g));
-    d.title = c.name + (op ? ' · ' + op.name : ' · свободно') + (V.mort[i] ? ' · залог' : '');
     d.classList.toggle('here', V.phase === 'play' && !!ap && ap.pos === i && !V.auction);
+    const prEl = d.querySelector('.pr');
+    if (prEl && c.price) {
+      const rentNow = op && !V.mort[i] ? Engine.rent(V, i, 7) : 0;
+      const left = (V.mortT && V.mortT[i]) ?? DATA.MORT_TURNS, tiny = $('#game').classList.contains('tiny');
+      const cl = V.closed && V.closed[i];
+      d.classList.toggle('closed', !!cl);
+      const txt = !op ? DATA.kfmt(c.price) : cl ? (tiny ? '⛔' + cl.left : (cl.kind === 'check' ? 'проверка · ' : 'ремонт · ') + cl.left) : V.mort[i] ? (tiny ? '⏳' + left : 'залог · ' + left) : c.t === 'utility' ? '×' + DATA.kfmt(Engine.utilMult(V, i)) : DATA.kfmt(rentNow);
+      if (prEl.textContent !== txt) prEl.textContent = txt;
+      prEl.classList.toggle('rent', !!op);
+      prEl.style.background = '';
+      prEl.setAttribute('aria-label', !op ? 'Цена покупки ' + txt : V.mort[i] ? 'Заложено' : 'Аренда ' + txt);
+    }
     if (op) d.style.setProperty('--o', tokOf(op.token).color);
     let ob = d.querySelector('.ob');
     if (op) { if (!ob) { ob = document.createElement('div'); ob.className = 'ob'; d.firstChild.appendChild(ob); } ob.textContent = op.name; ob.title = 'Владелец: ' + op.name; } else if (ob) ob.remove();
     let hs = d.querySelector('.hs'); const h = V.houses[i];
-    if (h) { if (!hs) { hs = document.createElement('div'); hs.className = 'hs'; d.appendChild(hs); } hs.classList.toggle('hotel', h === 5); hs.innerHTML = `<span class="iso-house ${h === 5 ? 'hotel' : ''}"></span><span>${h === 5 ? 'Отель' : '★ ' + h}</span>`; } else if (hs) hs.remove();
+    if (h) { if (!hs) { hs = document.createElement('div'); hs.className = 'hs'; d.appendChild(hs); } hs.classList.toggle('hotel', h === 5); const st = '<svg viewBox="0 0 24 24"><path d="m12 2 3 6.500 7 .8-5.200 4.800 1.400 7L12 17.600 5.800 21.100l1.400-7L2 9.300l7-.8z"/></svg>'; hs.innerHTML = h === 5 ? st : st.repeat(h); } else if (hs) hs.remove();
     let bm = d.querySelector('.ballm');
     if (V.ball === i) { if (!bm) { bm = document.createElement('div'); bm.className = 'ballm'; bm.innerHTML = Art.art('ball'); d.firstChild.appendChild(bm); } } else if (bm) bm.remove();
   });
@@ -517,17 +584,16 @@ function renderBoard() {
 
 /* ---------- Центр: игроки, сцена, чат ---------- */
 function renderTop() {
-  $('#room').innerHTML = mode === 'local' ? (V.solo ? 'Одиночная тестовая игра' : 'Игра на одном устройстве') : `<span class="dot ${online ? '' : 'off'}"></span>Комната <b>${esc(code)}</b> ${esc(statusText)}`;
+  $('#room').innerHTML = mode === 'local' ? '' : `<span class="dot ${online ? '' : 'off'}"></span>Комната <b>${esc(code)}</b> ${esc(statusText)}`;
   $('#bsound').innerHTML = Snd.on ? IC.son : IC.soff;
-  const u = $('#unread'); u.textContent = unread; u.classList.toggle('hide', !unread);
   $('#hub').classList.toggle('local', mode === 'local');
 }
 function renderPlayers() {
   const my = me(), actor = Engine.actor(V);
   $('#players').innerHTML = V.players.map((p) => {
     const props = BOARD.filter((c, i) => V.owner[i] === p.id).length;
-    const sub = p.bankrupt ? 'банкрот' : `${props} кл.${p.jail ? ' · в тюрьме' : ''}${p.jailCards ? ' · объезд ×' + p.jailCards : ''}${mode !== 'local' && !p.on ? ' · не в сети' : ''}`;
-    return `<div class="chip ${p.id === actor ? 'turn' : ''} ${p.bankrupt ? 'out' : ''}" id="pc_${p.id}" data-p="${p.id}">${tokHTML(tokOf(p.token))}<span class="who"><span class="nm2">${esc(p.name)}${p.id === my && mode !== 'local' ? ' · ты' : ''}</span><small>${sub}</small></span><span class="mn">${p.bankrupt ? '—' : money(p.money)}</span>${p.id === actor ? '<span class="secs"></span>' : ''}</div>`;
+    const sub = p.bankrupt ? 'банкрот' : `${props} кл.${p.jail ? ' · в тюрьме' : ''}${p.jailCards ? ' · объезд ×' + p.jailCards : ''}${p.skip ? ' · пробка' : ''}${p.halfHouse ? ' · прораб' : ''}${mode !== 'local' && !p.on ? ' · не в сети' : ''}`;
+    return `<div class="chip ${p.id === actor ? 'turn' : ''} ${p.bankrupt ? 'out' : ''}" id="pc_${p.id}" data-p="${p.id}" style="--pc:${tokOf(p.token).color}">${tokHTML(tokOf(p.token))}<span class="who"><span class="nm2">${esc(p.name)}${p.id === my && mode !== 'local' ? ' · ты' : ''}</span><small>${sub}</small></span><span class="mn">${p.bankrupt ? '—' : '<small class="cur">$</small>' + DATA.kfmt(p.money)}</span>${p.id === actor ? '<span class="secs"></span>' : ''}</div>`;
   }).join('');
   $$('#players .chip').forEach((c) => (c.onclick = () => openModal(() => playerModal(c.dataset.p))));
 }
@@ -538,81 +604,120 @@ function deedMini(i) {
   const st = c.t === 'prop' ? [['Аренда', c.rent[0]], ['Вся группа', c.rent[0] * 2], ['Отель', c.rent[5]]] : c.t === 'transport' ? [['Один', 25], ['Два', 50], ['Все четыре', 200]] : [['Аренда', c.price * .1], ['Залог', c.price / 2]];
   return `<div class="deed mini" style="--g:${cellColor(c)}" data-cell="${i}">${deedHead(i)}<div class="dstats">${st.map((s) => `<span>${s[0]}<b>${typeof s[1] === 'number' ? money(s[1]) : s[1]}</b></span>`).join('')}</div></div>`;
 }
+function tradeSide(list, m, title, total) {
+  const items = list.map((i) => { const c = BOARD[i]; return `<div class="titem" style="--g:${cellColor(c)}"><span class="tpic">${Art.cell(i)}</span><span class="tnm">${esc(c.name)}</span><b>${V.mort[i] ? 'залог ' + money(c.price / 2) : money(c.price)}</b></div>`; }).join('');
+  return `<section class="tside"><h4>${title}</h4><div class="tlist">${items}${m ? `<div class="titem money"><span class="tpic">$</span><span class="tnm">Деньги</span><b>${money(m)}</b></div>` : ''}${!items && !m ? '<p class="sub">ничего</p>' : ''}</div><div class="ttotal">Итого <b>${money(total)}</b></div></section>`;
+}
+function renderTradePop(my, local, btn) {
+  const t = V.trade; if (!t) return '';
+  const f = PL(t.from), to = PL(t.to);
+  const A = Engine.tradeValue(V, t.give, t.giveMoney), B = Engine.tradeValue(V, t.get, t.getMoney);
+  const forMe = local || my === t.to, mine = my === t.from;
+  const head = forMe ? `<b>${esc(f.name)}</b> предлагает обмен${local ? ' игроку <b>' + esc(to.name) + '</b>' : ''}` : mine ? `Ждём ответа <b>${esc(to.name)}</b>` : `<b>${esc(f.name)}</b> предлагает обмен <b>${esc(to.name)}</b>`;
+  const left = tradeSide(t.give, t.giveMoney, forMe && !local ? 'Ты получаешь' : esc(f.name) + ' отдаёт', A);
+  const right = tradeSide(t.get, t.getMoney, forMe && !local ? 'Ты отдаёшь' : esc(to.name) + ' отдаёт', B);
+  const btns = forMe ? btn('Принять', { type: 'acceptTrade', pid: t.to }, 'primary') + btn('Отказаться', { type: 'rejectTrade', pid: t.to }) : mine ? btn('Отменить', { type: 'rejectTrade' }) : '';
+  return `<div class="tpop"><p class="thead">${head}</p><div class="tcols">${left}<span class="tarrow">⇄</span>${right}</div>${btns ? `<div class="btns">${btns}</div>` : ''}</div>`;
+}
 function renderStage() {
   const my = me(), actor = Engine.actor(V), cp = V.players[V.turn], mp = PL(my), local = mode === 'local';
   const btn = (label, a, cls, dis) => `<button class="${cls || ''}" ${dis ? 'disabled' : ''} data-a='${esc(JSON.stringify(a))}'>${label}</button>`;
+  const manage = (label) => `<button class="manage" data-manage="1">${label || 'Заложить / продать'}</button>`;
   let spot = '', h = '', tb = '';
   if (V.phase === 'over') {
-    spot = `<div class="wincrown">${Art.art('crown')}</div><h3 style="text-align:center;margin:6px 0 10px">Победил ${esc(PL(V.winner).name)}</h3><div class="rank">${V.final.map((f, k) => { const p = PL(f.id); return `<div class="pl">${tokHTML(tokOf(p.token))}<span class="nm2">${k + 1}. ${esc(p.name)}</span><span class="mn">${money(f.worth)}</span></div>`; }).join('')}</div>`;
-    h = '<p>Капитал: деньги, клетки и постройки</p><button class="primary big" id="bnew">Новая игра</button>';
+    spot = `<div class="wincrown">${Art.art('crown')}</div><h3 class="turnh">Победил ${esc(PL(V.winner).name)}</h3><div class="rank">${V.final.map((f, k) => { const p = PL(f.id); return `<div class="pl">${tokHTML(tokOf(p.token))}<span class="nm2">${k + 1}. ${esc(p.name)}</span><span class="mn">${money(f.worth)}</span></div>`; }).join('')}</div>`;
+    h = '<button class="primary big" id="bnew">Новая игра</button>';
   } else {
-    if (V.trade) {
-      const t = V.trade, f = PL(t.from), to = PL(t.to), names = (l) => l.map((i) => '«' + esc(BOARD[i].name) + '»').join(', ');
-      const side = (l, m) => [names(l), m ? money(m) : ''].filter(Boolean).join(' + ') || 'ничего';
-      tb = `<div class="tradebox"><b>🤝 ${esc(f.name)} → ${esc(to.name)}</b><span>Отдаёт: ${side(t.give, t.giveMoney)}</span><span>Хочет: ${side(t.get, t.getMoney)}</span><div class="btns">${local || my === t.to ? btn('Согласиться', { type: 'acceptTrade', pid: t.to }, 'primary') + btn('Отказаться', { type: 'rejectTrade', pid: t.to }) : my === t.from ? btn('Отменить', { type: 'rejectTrade' }) : ''}</div></div>`;
-    }
+    if (V.trade) tb = renderTradePop(my, local, btn);
     if (V.auction) {
       const au = V.auction, ap = PL(actor);
       const nextBid = au.bidder ? au.bid + DATA.AUCTION_STEP : BOARD[au.cell].price;
-      spot = deedMini(au.cell) + `<div class="auction-info"><b>Аукцион · ${au.bidder ? money(au.bid) : 'от ' + money(nextBid)}</b><span>${au.bidder ? 'Лидирует ' + esc(PL(au.bidder).name) : 'Первая ставка — цена участка'}</span><span>Шаг ${money(DATA.AUCTION_STEP)} · ${esc(PL(au.excluded || cp.id).name)} не участвует</span><span>Очередь: ${au.order.map((id,k) => (k === au.i ? '→ ' : '') + esc(PL(id).name)).join(' · ')}</span>${au.passed?.length ? `<span>Пас: ${au.passed.map(id => esc(PL(id).name)).join(', ')}</span>` : ''}</div>`;
-      if (my === actor) h = `<p class="who">Ставит ${esc(ap.name)} · ${money(ap.money)}</p><div class="btns">${btn('Поставить ' + money(nextBid), { type: 'bid', amount: nextBid }, 'primary', ap.money < nextBid)}${btn('Пас', { type: 'auctionPass' })}</div>`;
-      else h = `<p>Ожидаем ставку ${esc(ap.name)}</p>`;
+      spot = deedMini(au.cell) + `<div class="ainfo"><b>Аукцион · ${au.bidder ? 'ставка ' + money(au.bid) + ' · ' + esc(PL(au.bidder).name) : 'старт ' + money(nextBid)}</b><span>Очередь: ${au.order.map((id, k) => (k === au.i ? '<u>' + esc(PL(id).name) + '</u>' : esc(PL(id).name))).join(' · ')}</span></div>`;
+      if (my === actor) h = `<div class="btns">${btn('Поставить ' + money(nextBid), { type: 'bid', amount: nextBid }, 'primary', ap.money < nextBid)}${btn('Пас', { type: 'auctionPass' })}</div>`;
+      else h = `<p class="wait">Ставит <b>${esc(ap.name)}</b>…</p>`;
     } else if (V.fire) {
       const f = V.fire, fp = PL(f.pid), c = BOARD[f.cell], lack = f.cost - fp.money;
-      spot = deedMini(f.cell) + `<div class="hint"><b style="color:var(--bad);font-family:var(--disp)">Пожар на «${esc(c.name)}»</b><br>Владелец ${esc(fp.name)} · на счету ${money(fp.money)}</div>`;
+      spot = deedMini(f.cell);
       if (my === f.pid) {
-        h = `<p>${local ? esc(fp.name) + ': п' : 'П'}отуши за ${money(f.cost)}, и поле останется у тебя вместе с постройками. Откажешься — постройки снесут, а поле вернётся банку и его сможет купить любой.</p>`;
-        if (lack > 0) h += `<p>Не хватает ${money(lack)}: нажимай на другие свои поля, чтобы заложить их или продать постройки.</p>`;
-        h += `<div class="btns">${btn('Потушить за ' + money(f.cost), { type: 'fireSave' }, 'primary big', lack > 0)}${btn('Отказаться', { type: 'fireGiveUp' }, 'danger')}</div>`;
-      } else h = `<p><span class="who">${esc(fp.name)}</span> решает, тушить ли «${esc(c.name)}»…</p>`;
+        h = `<h3 class="turnh bad">Пожар на «${esc(c.name)}»</h3><p>Потуши за ${money(f.cost)} — поле останется у тебя. Откажешься — постройки сгорят, поле вернётся банку.</p>`;
+        h += `<div class="btns">${btn('Потушить ' + money(f.cost), { type: 'fireSave' }, 'primary', lack > 0)}${btn('Отказаться', { type: 'fireGiveUp' })}</div>`;
+        if (lack > 0) h += manage('Не хватает ' + money(lack) + ' · заложить');
+      } else h = `<p class="wait">Пожар на «${esc(c.name)}». <b>${esc(fp.name)}</b> решает, тушить ли…</p>`;
     } else if (V.debt) {
-      const d = V.debt, dp = PL(d.pid);
-      spot = `<div class="hint"><b style="color:var(--bad);font-family:var(--disp)">К оплате ${money(d.amount)}</b><br>${esc(dp.name)}: есть ${money(dp.money)}, не хватает ${money(Math.max(0, d.amount - dp.money))}</div>`;
-      if (my === d.pid) h = `<p>Нажимай на свои клетки, чтобы продать постройки или заложить их, либо предложи обмен.</p><div class="btns">${btn((d.to && PL(d.to) ? 'Оплатить аренду ' : 'Заплатить ') + money(d.amount), { type: 'payDebt' }, 'primary big', dp.money < d.amount)}${btn('Сдаться', { type: 'bankrupt' }, 'danger')}</div>`;
-      else h = `<p>${esc(dp.name)} ищет деньги…</p>`;
+      const d = V.debt, dp = PL(d.pid), lack = d.amount - dp.money, cred = d.to && PL(d.to);
+      const what = cred ? 'Аренда · ' + esc(cred.name) : d.to === 'each' ? 'Выплата всем' : 'Платёж';
+      if (my === d.pid) {
+        h = `<h3 class="turnh">${what}: ${money(d.amount)}</h3>${lack > 0 ? `<p>Не хватает ${money(lack)}. Заложи участки или продай дома.</p>` : ''}`;
+        h += `<div class="btns">${btn((cred ? 'Оплатить аренду ' : 'Оплатить ') + money(d.amount), { type: 'payDebt' }, 'primary', lack > 0)}${manage('Заложить')}</div>`;
+      } else h = `<p class="wait"><b>${esc(dp.name)}</b> платит ${money(d.amount)}${cred ? ' игроку ' + esc(cred.name) : ''}…</p>`;
+    } else if (V.step === 'taxi' && V.taxi) {
+      const tx = V.taxi;
+      if (my === cp.id) {
+        if (!tx.cells) {
+          h = `<h3 class="turnh">Такси у Дома Советов</h3><p>Заплати — и тебе выпадут случайные поля. Выбираешь одно и едешь туда.</p><div class="btns col">${DATA.TAXI.map((o) => btn(`${o.n} ${o.n === 1 ? 'поле' : o.n < 5 ? 'поля' : 'полей'} · ${money(o.cost)}`, { type: 'taxiBuy', n: o.n }, '', cp.money < o.cost)).join('')}${btn('Остаться', { type: 'taxiStay' })}</div>`;
+        } else h = `<h3 class="turnh">Куда едем?</h3><p>Нажми на поле — подсвечены на доске.</p><div class="btns col">${tx.cells.map((i) => btn(esc(BOARD[i].name), { type: 'taxiGo', cell: i }, 'taxiopt')).join('')}</div>`;
+      } else h = `<p class="wait"><b>${esc(cp.name)}</b> ${tx.cells ? 'выбирает, куда ехать' : 'думает, вызывать ли такси'}…</p>`;
     } else {
-      const who = local ? esc(cp.name) + ': ' : '';
       if (V.step === 'buy') spot = deedMini(cp.pos);
       else if (V.card) spot = cardHTML(V.card);
-      else { const last = [...V.log].reverse().find((l) => typeof l === 'string'); spot = `<div class="landing"><small>Сейчас на поле</small><h3>${esc(BOARD[cp.pos].name)}</h3><p class="hint">${esc(last || '')}</p></div>`; }
       if (my === cp.id) {
         if (V.step === 'roll') {
-          h = cp.jail ? `<p class="who">${who}ты в тюрьме, попытка ${cp.jail} из 3</p>` : `<p class="who">${who}${V.again ? 'дубль, бросай ещё раз!' : 'твой ход'}</p>`;
+          h = `<h3 class="turnh">${local ? esc(cp.name) + ', твой ход' : V.again ? 'Дубль! Бросай ещё' : 'Ваш ход!'}</h3>${cp.jail ? `<p>Ты в тюрьме, попытка ${cp.jail} из 3</p>` : ''}`;
           h += btn('Бросить кубики', { type: 'roll' }, 'primary big');
           if (cp.jail) h += `<div class="btns">${btn('Выйти за ' + money(DATA.JAIL_FEE), { type: 'payJail' }, '', cp.money < DATA.JAIL_FEE)}${cp.jailCards ? btn('Карта «Объезд»', { type: 'useJailCard' }) : ''}</div>`;
+          if (mp && !mp.bankrupt && !V.trade && V.players.filter((p) => !p.bankrupt).length > 1) h += '<button id="btrade" class="link">Предложить обмен</button>';
         } else if (V.step === 'buy') {
           const c = BOARD[cp.pos], lack = c.price - cp.money;
-          h = (lack > 0 ? `<p>${who}не хватает ${money(lack)}. Заложи что-нибудь или отдай на аукцион.</p>` : `<p>После покупки останется ${money(cp.money - c.price)}</p>`) + `<div class="btns">${btn('Купить за ' + money(c.price), { type: 'buy' }, 'primary big', lack > 0)}${btn('На аукцион', { type: 'pass' }, 'big')}</div>`;
-        } else h = '<p>Передаём ход следующему игроку…</p>';
-      } else h = `<p>Ходит <span class="who">${esc(cp.name)}</span>${V.step === 'buy' ? ', думает о покупке' : ''}…</p>`;
+          h = `<div class="btns">${btn('Купить ' + money(c.price), { type: 'buy' }, 'primary', lack > 0)}${btn('На аукцион', { type: 'pass' })}</div>`;
+          if (lack > 0) h += manage('Не хватает ' + money(lack) + ' · заложить');
+        } else h = '<p class="wait">Передаём ход…</p>';
+      } else h = `<p class="wait">Ходит <b>${esc(cp.name)}</b>${V.step === 'buy' ? ', думает о покупке' : ''}…</p>`;
     }
-    if (mp && my === cp.id && !mp.bankrupt && !V.trade && !V.auction && V.players.filter(p => !p.bankrupt).length > 1) h += '<button id="btrade" class="ghost">🤝 Предложить обмен</button>';
   }
   if (V.solo && V.phase === 'play' && V.step === 'roll') h += `<details class="test-controls"><summary>Тест: задать кубики</summary><div class="row"><select id="testd1" aria-label="Первый кубик">${[1,2,3,4,5,6].map(n=>`<option>${n}</option>`).join('')}</select><select id="testd2" aria-label="Второй кубик">${[1,2,3,4,5,6].map(n=>`<option>${n}</option>`).join('')}</select><button id="testroll">Бросить заданные</button></div></details>`;
+  $('#stage').classList.toggle('idle', !spot && /^<p class="wait">/.test(h));
   $('#spot').innerHTML = spot;
   const tbe = $('#tradebar'); tbe.innerHTML = tb; tbe.classList.toggle('hide', !tb);
   const A = $('#actions'); A.innerHTML = h; A.classList.remove('busy');
-  A.querySelectorAll('[data-a]').forEach((b) => (b.onclick = () => { const a = JSON.parse(b.dataset.a); if (a.type === 'bankrupt' && !b.dataset.confirm) { b.dataset.confirm='1'; b.textContent='Подтвердить сдачу'; return; } if (a.type === 'fireGiveUp' && !b.dataset.confirm) { b.dataset.confirm='1'; b.textContent='Точно отдать поле?'; return; } act(a.type, a); }));
-  tbe.querySelectorAll('[data-a]').forEach((b) => (b.onclick = () => { const a = JSON.parse(b.dataset.a); if (a.type === 'acceptTrade' && !b.dataset.confirm) { b.dataset.confirm='1'; b.textContent='Подтвердить обмен'; return; } act(a.type, a); }));
+  const wire = (root) => root.querySelectorAll('[data-a]').forEach((b) => (b.onclick = () => { const a = JSON.parse(b.dataset.a); if (a.type === 'fireGiveUp' && !b.dataset.confirm) { b.dataset.confirm = '1'; b.textContent = 'Точно отдать поле?'; return; } act(a.type, a); }));
+  wire(A); wire(tbe);
+  A.querySelectorAll('[data-manage]').forEach((b) => (b.onclick = startPick));
+  renderPick();
+  $$('.cell.taxi-opt').forEach((c) => c.classList.remove('taxi-opt'));
+  if (V.step === 'taxi' && V.taxi && V.taxi.cells) V.taxi.cells.forEach((i) => document.getElementById('c' + i).classList.add('taxi-opt'));
   $$('#spot .deed.mini').forEach((d) => (d.onclick = () => openModal(() => cellModal(+d.dataset.cell))));
   if ($('#btrade')) $('#btrade').onclick = () => { trade = { to: null, give: new Set(), get: new Set() }; openModal(tradeModal); };
   if ($('#testroll')) $('#testroll').onclick = () => act('roll', {dice: [+$('#testd1').value, +$('#testd2').value]});
   if ($('#bnew')) $('#bnew').onclick = leave;
 }
-function leave() { if (mode === 'local') LS.del('km_local_v2'); if (mode === 'host') { LS.del('km_state_' + code); LS.del('km_last_host'); } V = null; S = null; mode = null; location.hash = ''; location.reload(); }
+function leave() { pickMode = false; if ($('#pickbar')) $('#pickbar').remove(); if (mode === 'local') LS.del('km_local_v2'); if (mode === 'host') { LS.del('km_state_' + code); LS.del('km_last_host'); } V = null; S = null; mode = null; location.hash = ''; location.reload(); }
 function scrollFeed(force) { const l = $('#feedlist'); if (force || l.scrollHeight - l.scrollTop - l.clientHeight < 80) { l.scrollTop = l.scrollHeight; $('#feednew').classList.add('hide'); } }
+// Имена игроков в событиях — их цветом
+function paint(html) {
+  const ps = V.players.filter((p) => p.name.length >= 2).sort((a, b) => b.name.length - a.name.length);
+  if (!ps.length) return html;
+  const re = new RegExp('(^|[^\\p{L}\\p{N}])(' + ps.map((p) => esc(p.name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|') + ')(?![\\p{L}\\p{N}])', 'gu');
+  return html.replace(re, (m, pre, nm) => { const p = ps.find((q) => esc(q.name) === nm); return pre + `<b style="color:${tokOf(p.token).color}">${nm}</b>`; });
+}
 function renderFeed() {
-  const l = $('#feedlist'), near = l.scrollHeight - l.scrollTop - l.clientHeight < 80, oldTop = l.scrollTop;
+  const l = $('#feedlist'), near = l.scrollHeight - l.scrollTop - l.clientHeight < 80, oldTop = l.scrollTop, local = mode === 'local';
+  const seen = (x) => local || !x.to || x.to === myPid || x.c === myPid;
   const content = V.log.map((x) => {
-    if (typeof x === 'string') return `<div class="ln event">${esc(x)}</div>`;
-    const p = PL(x.c), name = esc(p ? p.name : '?');
-    if (x.kind === 'card') return `<div class="ln card-event"><b style="color:${p ? tokOf(p.token).color : '#333'}">${name} · ${x.deck === 'D' ? 'Движ' : 'Сторис'}</b><p>${esc(x.t)}</p></div>`;
-    return `<div class="ln chat"><b style="color:${p ? tokOf(p.token).color : '#333'}">${name}</b> ${esc(x.t)}</div>`;
+    if (typeof x === 'string') return `<div class="ln event">${paint(esc(x))}</div>`;
+    if (!seen(x)) return '';
+    const p = PL(x.c), name = esc(p ? p.name : '?'), col = p ? tokOf(p.token).color : '#9aa5ad';
+    if (x.kind === 'card') return `<div class="ln card-event"><b style="color:${col}">${name} · ${x.deck === 'D' ? 'Движ' : 'Сторис'}</b><p>${esc(x.t)}</p></div>`;
+    const pm = x.to ? `<i class="pm">${x.c === myPid ? 'лично → ' + esc((PL(x.to) || {}).name || '?') : 'лично тебе'}</i>` : '';
+    return `<div class="ln chat ${x.to ? 'priv' : ''}"><b style="color:${col}">${name}</b>${pm} ${esc(x.t)}</div>`;
   }).join('');
   if (content !== l.innerHTML) { l.innerHTML = content; if (near) scrollFeed(true); else { l.scrollTop = oldTop; $('#feednew').classList.remove('hide'); } }
-  $('#mini').innerHTML = '';
+  // Кому писать: всем или лично одному игроку
+  const sel = $('#chatto'), cur = sel.value, others = local ? [] : V.players.filter((p) => p.id !== myPid);
+  const opts = '<option value="">Всем</option>' + others.map((p) => `<option value="${p.id}">${esc(p.name)}</option>`).join('');
+  if (sel.dataset.o !== opts) { sel.innerHTML = opts; sel.dataset.o = opts; sel.value = others.some((p) => p.id === cur) ? cur : ''; }
+  sel.classList.toggle('hide', !others.length);
 }
-function renderGame() { renderBoard(); renderTop(); renderPlayers(); renderStage(); renderFeed(); tickTimer(); }
+function renderGame() { renderBoard(); renderTop(); renderPlayers(); renderStage(); renderFeed(); markTrade(); tickTimer(); }
 function tickTimer() {
   if (!V || !boardBuilt) return;
   const bar = $('#timer'), el = $('#players .chip.turn .secs');
@@ -632,34 +737,74 @@ function actionError(type, cell) {
   return Engine.apply(clone, {type, cell, pid: me()});
 }
 function cellModal(i) {
-  const c = BOARD[i], o = V.owner[i], my = me(), h = V.houses[i] || 0;
+  const c = BOARD[i], o = V.owner[i], my = me(), h = V.houses[i] || 0, op = o && PL(o);
+  const row = (label, val, cur) => `<tr class="${cur ? 'cur' : ''}"><td>${label}</td><td>${val}</td></tr>`;
+  const star = (n) => n === 5 ? '<span class="gold">★</span> отель' : '★'.repeat(n);
   let body = '';
-  if (Engine.buyable(c)) body += `<div class="ownership" style="--o:${o ? tokOf(PL(o).token).color : '#87929c'}"><b>${o ? esc(PL(o).name) : 'Свободный участок'}</b><span>${V.mort[i] ? 'Заложен · аренда $0' : o ? 'Аренда сейчас: ' + money(Engine.rent(V,i,V.dice[0]+V.dice[1])) : 'Цена: ' + money(c.price)}</span></div>`;
-  if (c.t === 'prop') {
-    const full = o && Engine.ownsGroup(V,o,c.g);
-    body += `<table class="rent"><thead><tr><th>Уровень</th><th>Улучшение</th><th>Аренда</th></tr></thead><tbody><tr class="${!h && !V.mort[i] ? 'cur' : ''}"><td>${full ? 'Вся группа' : 'Без домов'}</td><td>—</td><td>${money(c.rent[0]*(full?2:1))}</td></tr>${[1,2,3,4,5].map(n=>`<tr class="${h===n ? 'cur' : ''}"><td>${n===5 ? 'Отель' : '★'.repeat(n)}</td><td>${money(GROUPS[c.g].house)}</td><td>${money(c.rent[n])}</td></tr>`).join('')}</tbody></table><p class="sub">Каждая следующая ступень оплачивается отдельно. Строй и продавай равномерно по всей группе.</p>`;
-  } else if (c.t === 'transport') body += `<table class="rent">${[25,50,100,200].map((n,k)=>`<tr><td>${k+1} транспорт у владельца</td><td>${money(n)}</td></tr>`).join('')}</table>`;
-  else if (c.t === 'utility') body += '<p class="sub">Фиксированная аренда: $1 500 за посещение.</p>';
-  else if (c.t === 'tax') body += `<p>Платёж ${money(c.amount)} ${V.opt.pot ? 'на парковку' : 'в банк'}.</p>`;
-  else if (c.t === 'card') body += '<p>Текст выпавшей карточки и её результат сохраняются в общей истории.</p>';
-  else body += `<p>${esc(c.t === 'parking' ? (V.opt.pot ? 'На парковке: ' + money(V.pot) : 'Бесплатная парковка') : c.note || '')}</p>`;
   if (Engine.buyable(c)) {
-    body += `<p class="sub">Залог ${money(c.price/2)} · выкуп ${money(Engine.unmortCost(i))}</p>`;
-    if (o === my && V.phase === 'play') {
-      const button = (type, label, primary='') => { const reason = actionError(type,i); return `<div><button class="${primary}" data-m="${type}" ${reason ? 'disabled' : ''}>${label}</button>${reason ? `<small class="reason">${esc(reason)}</small>` : ''}</div>`; };
-      body += '<div class="property-actions">';
-      if (c.t === 'prop' && h<5) body += button('build', `${h===4 ? 'Построить отель' : 'Улучшить до ★'+(h+1)} · ${money(GROUPS[c.g].house)}`, 'primary');
-      if (h) body += button('sell','Продать уровень · +'+money(GROUPS[c.g].house/2));
-      if (!h) body += V.mort[i] ? button('unmortgage','Выкупить · '+money(Engine.unmortCost(i))) : button('mortgage','Заложить · +'+money(c.price/2));
-      body += '</div>';
-    }
+    const left = (V.mortT && V.mortT[i]) ?? DATA.MORT_TURNS;
+    body += `<p class="own">${op ? `<i style="background:${tokOf(op.token).color}"></i><b>${esc(op.name)}</b>` : 'Свободно'}${V.closed && V.closed[i] ? ` · <span class="bad">${V.closed[i].kind === 'check' ? 'закрыт на проверку' : 'на ремонте'}, без аренды ещё ${V.closed[i].left} ход.</span>` : ''}${V.mort[i] ? ` · <span class="bad">в залоге, уйдёт банку через ${left} ход${left % 10 === 1 && left !== 11 ? '' : left % 10 >= 2 && left % 10 <= 4 && (left < 12 || left > 14) ? 'а' : 'ов'}</span>` : ''}</p>`;
   }
-  $('#modal').innerHTML = `<div class="win"><div class="deed" style="--g:${cellColor(c)}">${deedHead(i)}</div>${body}<button class="ghost" id="mclose">Закрыть</button></div>`;
+  if (c.t === 'prop') {
+    const full = o && Engine.ownsGroup(V, o, c.g), base = !h && !V.mort[i];
+    body += `<table class="rent">${row('Участок', money(c.rent[0]), base && !full)}${row('Вся группа', money(c.rent[0] * 2), base && full)}${[1, 2, 3, 4, 5].map((n) => row(star(n), money(c.rent[n]), h === n)).join('')}</table><p class="sub">Дом ${money(GROUPS[c.g].house)} · залог ${money(c.price / 2)}</p>`;
+  } else if (c.t === 'transport') {
+    body += `<table class="rent">${[25, 50, 100, 200].map((r, k) => row(`${k + 1} из 4`, money(r), o && !V.mort[i] && Engine.rent(V, i) === r)).join('')}</table><p class="sub">Залог ${money(c.price / 2)}</p>`;
+  } else if (c.t === 'utility') {
+    const m = Engine.utilMult(V, i);
+    body += `<table class="rent">${row('Одно предприятие', 'кубики × ' + DATA.kfmt(4), o && !V.mort[i] && m === 4)}${row('Оба', 'кубики × ' + DATA.kfmt(10), o && !V.mort[i] && m === 10)}</table><p class="sub">Залог ${money(c.price / 2)}</p>`;
+  } else if (c.t === 'tax') body += `<p>Платёж ${money(c.amount)} ${V.opt.pot ? 'в общак' : 'в банк'}.</p>`;
+  else if (c.t === 'card') body += '<p class="sub">Тяни карточку и смотри, что выпало.</p>';
+  else body += `<p>${esc(c.t === 'parking' ? (c.note + (V.opt.pot ? '. В общаке: ' + money(V.pot) : '')) : c.note || '')}</p>`;
+  if (Engine.buyable(c) && o === my && V.phase === 'play') {
+    const b = (type, label, cls) => { const r = actionError(type, i); return r && type === 'build' ? `<p class="reason">${esc(r)}</p>` : r ? '' : `<button class="${cls || ''}" data-m="${type}">${label}</button>`; };
+    let acts = '';
+    if (c.t === 'prop' && h < 5) acts += b('build', `${h === 4 ? 'Построить отель' : 'Поставить ★' + (h + 1)} · ${money(Engine.houseCost(V, PL(my), c))}${PL(my) && PL(my).halfHouse ? ' (прораб)' : ''}`, 'primary');
+    if (h) acts += b('sell', 'Продать ★ · +' + money(GROUPS[c.g].house / 2));
+    if (!h) acts += V.mort[i] ? b('unmortgage', 'Выкупить · ' + money(Engine.unmortCost(i)), 'primary') : b('mortgage', 'Заложить · +' + money(c.price / 2));
+    if (acts) body += `<div class="property-actions">${acts}</div>`;
+  }
+  $('#modal').innerHTML = `<div class="win cellwin"><div class="deed" style="--g:${cellColor(c)}">${deedHead(i)}</div>${body}<button class="ghost" id="mclose">Закрыть</button></div>`;
   $('#mclose').onclick = closeModal;
-  $$('#modal [data-m]').forEach(b=>b.onclick=()=>{
-    if (['mortgage','sell'].includes(b.dataset.m) && !b.dataset.confirm) { b.dataset.confirm='1'; b.textContent='Подтвердить '+(b.dataset.m==='mortgage'?'залог':'продажу'); return; }
-    act(b.dataset.m,{cell:i});
-  });
+  $$('#modal [data-m]').forEach((bt) => (bt.onclick = () => {
+    if (['mortgage', 'sell'].includes(bt.dataset.m)) return openModal(() => pickConfirm(i, bt.dataset.m));
+    act(bt.dataset.m, { cell: i });
+  }));
+}
+// Залог по карте: подсвечиваем свои участки, клик — окошко «сколько получишь», принять или отказаться
+let pickMode = false;
+function pickable(i) { return V && V.owner[i] === me() && (!actionError(V.houses[i] ? 'sell' : 'mortgage', i)); }
+function startPick() { pickMode = true; closeModal(); renderPick(); }
+function stopPick() { pickMode = false; renderPick(); }
+function renderPick() {
+  const on = pickMode && V && V.phase === 'play' && PL(me()) && !PL(me()).bankrupt;
+  if (pickMode && !on) pickMode = false;
+  $('#game').classList.toggle('pick-mode', !!on);
+  BOARD.forEach((c, i) => { const d = document.getElementById('c' + i); if (d) d.classList.toggle('pickable', !!on && pickable(i)); });
+  let bar = $('#pickbar');
+  if (!on) { if (bar) bar.remove(); return; }
+  const host = $('#game').classList.contains('mode-wide') ? $('#hub') : document.body;
+  if (!bar) { bar = document.createElement('div'); bar.id = 'pickbar'; }
+  if (bar.parentNode !== host) host.appendChild(bar);
+  const p = PL(me()), cp = V.players[V.turn];
+  const need = V.debt && V.debt.pid === p.id ? V.debt.amount : V.fire && V.fire.pid === p.id ? V.fire.cost : V.step === 'buy' && cp.id === p.id ? BOARD[cp.pos].price : 0;
+  const any = BOARD.some((c, i) => pickable(i));
+  bar.innerHTML = `<span>${any ? 'Нажми на участок, который заложить' : 'Закладывать больше нечего'}<small>На счету ${money(p.money)}${need ? ' · нужно ' + money(need) : ''}</small></span><button id="pickdone">Готово</button>`;
+  $('#pickdone').onclick = stopPick;
+}
+function pickConfirm(i, type) {
+  const c = BOARD[i], h = V.houses[i] || 0;
+  type = type || (h ? 'sell' : 'mortgage');
+  const r = actionError(type, i);
+  const gain = type === 'sell' ? GROUPS[c.g].house / 2 : c.price / 2;
+  $('#modal').innerHTML = `<div class="win small"><div class="deed" style="--g:${cellColor(c)}">${deedHead(i)}</div>
+    <h2>${type === 'sell' ? (h === 5 ? 'Продать отель?' : 'Продать дом?') : 'Заложить участок?'}</h2>
+    <p class="big-gain">+${money(gain)}</p>
+    <p class="sub">${type === 'sell' ? 'Банк выкупает постройку за половину цены.' : `Аренду он приносить не будет. Выкуп — ${money(Engine.unmortCost(i))}. Не выкупишь за ${DATA.MORT_TURNS} своих ходов — уйдёт банку.`}</p>
+    ${r ? `<p class="reason">${esc(r)}</p>` : ''}
+    <div class="btns"><button class="primary" id="pyes" ${r ? 'disabled' : ''}>${type === 'sell' ? 'Продать' : 'Заложить'}</button><button class="ghost" id="pno">Отмена</button></div></div>`;
+  $('#pno').onclick = closeModal;
+  $('#pyes').onclick = () => { act(type, { cell: i }); closeModal(); };
 }
 function playerModal(pid) {
   const p = PL(pid), my = me(); if (!p) return closeModal();
@@ -668,10 +813,27 @@ function playerModal(pid) {
   $('#modal').innerHTML = `<div class="win"><div class="pl" style="background:none;padding:0">${tokHTML(tokOf(p.token))}<span class="nm2"><h2 style="font-size:20px">${esc(p.name)}</h2><small>${tokOf(p.token).name}</small></span></div>
     <div class="deed"><div class="dstats"><span>Деньги<b>${p.bankrupt ? '—' : money(p.money)}</b></span><span>Капитал<b>${p.bankrupt ? money(0) : money(Engine.netWorth(V, p))}</b></span><span>Клеток<b>${props.length}</b></span></div></div>
     <div>${list}</div>
-    <div class="btns">${my && my === V.players[V.turn].id && my !== pid && !p.bankrupt && PL(my) && !PL(my).bankrupt && V.phase === 'play' && !V.trade && !V.auction ? '<button class="primary" id="ptrade">🤝 Предложить обмен</button>' : ''}<button class="ghost" id="mclose">Закрыть</button></div></div>`;
+    <div class="btns">${my && my === V.players[V.turn].id && my !== pid && !p.bankrupt && PL(my) && !PL(my).bankrupt && V.phase === 'play' && !V.trade && !V.auction && V.step === 'roll' && !V.debt ? '<button class="primary" id="ptrade">Предложить обмен</button>' : ''}${pid === my && mode !== 'local' && V.phase === 'play' && !p.bankrupt ? '<button class="danger" id="pgive">Сдаться</button>' : ''}<button class="ghost" id="mclose">Закрыть</button></div></div>`;
   $('#mclose').onclick = closeModal;
   $('#modal').querySelectorAll('[data-cell]').forEach((b) => (b.onclick = () => openModal(() => cellModal(+b.dataset.cell))));
   if ($('#ptrade')) $('#ptrade').onclick = () => { trade = { to: pid, give: new Set(), get: new Set() }; openModal(tradeModal); };
+  if ($('#pgive')) $('#pgive').onclick = (e) => { const b = e.target; if (!b.dataset.sure) { b.dataset.sure = 1; b.textContent = 'Точно сдаться? Нажми ещё раз'; return; } act('bankrupt'); closeModal(); };
+}
+// Где взять деньги: заложить участки или продать дома, не выходя из окна
+function manageModal() {
+  const my = me(), p = PL(my); if (!p || V.phase !== 'play') return closeModal();
+  const cp = V.players[V.turn];
+  const need = V.debt && V.debt.pid === my ? V.debt.amount : V.fire && V.fire.pid === my ? V.fire.cost : V.step === 'buy' && cp.id === my ? BOARD[cp.pos].price : 0;
+  const cells = BOARD.map((c, i) => i).filter((i) => V.owner[i] === my);
+  const rows = cells.map((i) => {
+    const c = BOARD[i], h = V.houses[i] || 0;
+    const [type, label] = h ? ['sell', (h === 5 ? 'Продать отель' : 'Продать дом') + ' +' + money(GROUPS[c.g].house / 2)] : V.mort[i] ? ['unmortgage', 'Выкупить ' + money(Engine.unmortCost(i))] : ['mortgage', 'Заложить +' + money(c.price / 2)];
+    const reason = actionError(type, i);
+    return `<div class="mrow"><i style="background:${cellColor(c)}"></i><span>${esc(c.name)}${h ? ' <small>' + (h === 5 ? 'отель' : '★'.repeat(h)) + '</small>' : V.mort[i] ? ' <small>заложен</small>' : ''}</span><button class="sm ${type === 'unmortgage' ? 'ghost' : ''}" data-m="${type}" data-c="${i}" ${reason ? 'disabled title="' + esc(reason) + '"' : ''}>${label}</button></div>`;
+  }).join('') || '<p class="sub">У тебя пока нет участков</p>';
+  $('#modal').innerHTML = `<div class="win"><h2>Заложить или продать</h2><p class="sub">На счету <b>${money(p.money)}</b>${need ? ' · нужно ' + money(need) + (p.money >= need ? ' — хватает' : ', не хватает ' + money(need - p.money)) : ''}</p><div class="mlist">${rows}</div><button class="primary" id="mclose">Готово</button></div>`;
+  $('#mclose').onclick = closeModal;
+  $$('#modal [data-m]').forEach((b) => (b.onclick = () => act(b.dataset.m, { cell: +b.dataset.c })));
 }
 let trade = null;
 function selectTradeCell(i) {
@@ -681,7 +843,7 @@ function selectTradeCell(i) {
   if (c.t === 'prop' && Engine.groupCells(c.g).some(k=>V.houses[k])) return toast('Сначала продай постройки в этой группе');
   const set = owner === me() ? trade.give : trade.get;
   set.has(i) ? set.delete(i) : set.add(i);
-  trade.confirm = false; tradeModal();
+  tradeModal();
 }
 function tradeModal() {
   const my = me(), mp = PL(my);
@@ -689,21 +851,34 @@ function tradeModal() {
   const others = V.players.filter(p=>!p.bankrupt && p.id!==my);
   if (!others.length) return closeModal();
   if (!others.some(p=>p.id===trade.to)) trade.to=others[0].id;
-  $('#modal').classList.add('trade-mode');
-  $$('.cell').forEach((c,i)=>c.classList.toggle('selected-trade',trade.give.has(i)||trade.get.has(i)));
-  const list = set => [...set].map(i=>`<button class="chipx on" data-cell="${i}">${esc(BOARD[i].name)}${V.mort[i]?' · залог':''} ×</button>`).join('') || '<span class="sub">Нажми на участок на поле</span>';
-  $('#modal').innerHTML = `<div class="win"><h2>Обмен</h2><p class="sub">Выбирай участки прямо на поле. Они остаются видимыми вокруг окна.</p><div class="btns">${others.map(p=>`<button data-to="${p.id}" class="sm ${p.id===trade.to?'primary':''}">${esc(p.name)}</button>`).join('')}</div><div class="trade-columns"><section><b>Отдаю</b><div>${list(trade.give)}</div><label>Доплата, $<input id="tgm" type="number" min="0" step="100" value="${trade.giveMoney||''}"></label></section><section><b>Получаю</b><div>${list(trade.get)}</div><label>Доплата, $<input id="twm" type="number" min="0" step="100" value="${trade.getMoney||''}"></label></section></div><p class="sub">За полученный заложенный участок взимается комиссия 10% залога.</p><div class="btns"><button class="primary" id="tsend">${trade.confirm?'Подтвердить и отправить':'Проверить предложение'}</button><button class="ghost" id="mclose">Отмена</button></div><p id="tradecheck" class="sub">${trade.confirm ? `Доплата от тебя ${money((trade.giveMoney||0)/100)}, тебе ${money((trade.getMoney||0)/100)}. Проверь выбранные участки.` : ''}</p></div>`;
-  $('#mclose').onclick = closeModal;
-  $$('#modal [data-to]').forEach(b=>b.onclick=()=>{trade.to=b.dataset.to;trade.get.clear();trade.confirm=false;tradeModal();});
+  const M = $('#modal'); M.classList.add('trade-mode');
+  // Каркас рисуется один раз, дальше меняются только списки и суммы — окно не мигает
+  if (!$('#modal .win.tradewin')) {
+    M.innerHTML = `<div class="win tradewin"><h2>Обмен</h2><div class="btns" id="tto"></div><div class="trade-columns"><section><b>Ты отдаёшь</b><div id="tgive"></div><label>Доплата, k<input id="tgm" type="number" min="0" step="10" inputmode="numeric"></label><div class="ttotal" id="tA"></div></section><section><b>Ты получаешь</b><div id="tget"></div><label>Доплата, k<input id="twm" type="number" min="0" step="10" inputmode="numeric"></label><div class="ttotal" id="tB"></div></section></div><p class="tbal" id="tbal"></p><div class="btns"><button class="primary" id="tsend">Отправить</button><button class="ghost" id="mclose">Отмена</button></div></div>`;
+    $('#mclose').onclick = closeModal;
+    for (const [id,key] of [['tgm','giveMoney'],['twm','getMoney']]) { const el = $('#'+id); el.value = trade[key] || ''; el.oninput = e => { trade[key] = Math.max(0, +e.target.value || 0); tradeTotals(); }; }
+    $('#tsend').onclick=()=>{
+      const a={type:'proposeTrade',pid:my,to:trade.to,give:[...trade.give],get:[...trade.get],giveMoney:(trade.giveMoney||0)/10,getMoney:(trade.getMoney||0)/10};
+      if (![trade.giveMoney||0,trade.getMoney||0].every(n=>Number.isFinite(n)&&n>=0&&n%10===0)) return toast('Доплата — число, кратное 10k');
+      const err=Engine.apply(JSON.parse(JSON.stringify(V)),a); if(err) return toast(err);
+      act(a.type,a);closeModal();
+    };
+  }
+  markTrade();
+  $('#tto').innerHTML = others.map(p=>`<button data-to="${p.id}" class="sm ${p.id===trade.to?'primary':''}">${esc(p.name)}</button>`).join('');
+  const list = set => [...set].map(i=>`<button class="tchip" data-cell="${i}" title="Убрать"><i style="background:${cellColor(BOARD[i])}"></i><span class="cn">${esc(BOARD[i].name)}</span><b>${V.mort[i]?'залог '+money(BOARD[i].price/2):money(BOARD[i].price)}</b><span class="cx">×</span></button>`).join('') || '<span class="sub">Нажми на участок на поле</span>';
+  $('#tgive').innerHTML = list(trade.give); $('#tget').innerHTML = list(trade.get);
+  $$('#modal [data-to]').forEach(b=>b.onclick=()=>{trade.to=b.dataset.to;trade.get.clear();tradeModal();});
   $$('#modal [data-cell]').forEach(b=>b.onclick=()=>selectTradeCell(+b.dataset.cell));
-  for (const [id,key] of [['tgm','giveMoney'],['twm','getMoney']]) $('#'+id).oninput=e=>{trade[key]=+e.target.value;trade.confirm=false;$('#tsend').textContent='Проверить предложение';};
-  $('#tsend').onclick=()=>{
-    const a={type:'proposeTrade',pid:my,to:trade.to,give:[...trade.give],get:[...trade.get],giveMoney:(trade.giveMoney||0)/100,getMoney:(trade.getMoney||0)/100};
-    if (![trade.giveMoney||0,trade.getMoney||0].every(n=>Number.isFinite(n)&&n>=0&&n%100===0)) return toast('Суммы должны быть неотрицательными и кратными $100');
-    const err=Engine.apply(JSON.parse(JSON.stringify(V)),a); if(err) return toast(err);
-    if (!trade.confirm) {trade.confirm=true;tradeModal();return;}
-    act(a.type,a);closeModal();
-  };
+  tradeTotals();
+}
+function tradeTotals() {
+  const A = Engine.tradeValue(V, [...trade.give], (trade.giveMoney || 0) / 10), B = Engine.tradeValue(V, [...trade.get], (trade.getMoney || 0) / 10);
+  $('#tA').innerHTML = 'Итого <b>' + money(A) + '</b>'; $('#tB').innerHTML = 'Итого <b>' + money(B) + '</b>';
+  const big = Math.max(A, B), diff = big ? Math.round((1 - Math.min(A, B) / big) * 100) : 0, ok = big > 0 && diff <= 50;
+  const el = $('#tbal'); el.classList.toggle('bad', big > 0 && !ok);
+  el.textContent = !big ? 'Выбери, что отдаёшь и что хочешь получить' : ok ? `Разница ${diff}% — можно предлагать` : `Разница ${diff}% — слишком неравно, максимум 50%`;
+  $('#tsend').disabled = !ok;
 }
 function menuModal() {
   const my = me(), mp = PL(my), playing = V && V.phase === 'play';
@@ -725,16 +900,17 @@ function menuModal() {
   $('#mexit').onclick = (e) => twice(e.target, () => { location.hash = ''; mode = null; location.reload(); });
 }
 const RULES = [
-  ['dice', '#4263eb', 'Ход', 'Бросаешь два кубика и едешь по кругу. Дубль даёт ещё один бросок, три дубля подряд отправляют в тюрьму. За каждый круг через Площадь Победы получаешь $20 000.'],
-  ['house', '#2aa566', 'Покупка и аукцион', 'Встал на свободную клетку — можешь купить её по цене. Отказался или не хватает денег — клетка уходит на аукцион между остальными игроками. Первая ставка равна цене участка; шаг — $2 000. Пас — выход из аукциона.'],
-  ['coins', '#e5484d', 'Аренда', 'Встал на чужую клетку — платишь владельцу. Транспорт: $2 500, $5 000, $10 000 или $20 000, смотря сколько его у владельца. Комбинат и маяк: фиксированные $1 500. Нажми «Оплатить аренду», даже если денег хватает. После оплаты ход переходит автоматически.'],
-  ['cathedral', '#f08530', 'Группы и постройки', 'Собрал все клетки одного цвета — аренда без построек удваивается и можно ставить дома: до четырёх, потом отель. Строить нужно равномерно. Домов в городе всего 32, отелей 12: кончились — жди, пока кто-то продаст.'],
-  ['key', '#5b6b8c', 'Залог', 'Нужны деньги — заложи клетку за половину цены. Аренду она не приносит. Выкуп стоит залог плюс 10%. Постройки банк берёт обратно за полцены.'],
-  ['swap', '#e0569f', 'Обмен', 'Только в свой ход можно предложить другому игроку клетки и деньги. За каждую полученную заложенную клетку сразу платишь банку 10% её залога.'],
-  ['jam', '#2a3b5f', 'Тюрьма', 'Клетка «Полиция», три дубля подряд или карточка ставят тебя в тюрьму на Эстакадном мосту. Выехать: выбросить дубль, заплатить $5 000 или сыграть карту «Объезд». На третьей попытке платишь $5 000 и едешь.'],
-  ['deckD', '#7357e8', 'Движ и Сторис', 'Карточки «Движ» куда-то тебя везут, «Сторис» приносят или забирают деньги. Все они про нашу компанию.'],
+  ['dice', '#4263eb', 'Ход', 'Бросаешь два кубика и едешь по кругу. Дубль даёт ещё один бросок, три дубля подряд отправляют в тюрьму. За каждый круг через Площадь Победы получаешь $2,000k, а если встал ровно на неё — $4,000k.'],
+  ['house', '#2aa566', 'Покупка и аукцион', 'Встал на свободную клетку — можешь купить её по цене. Отказался или не хватает денег — клетка уходит на аукцион между остальными игроками. Первая ставка равна цене участка; шаг — $200k. Пас — выход из аукциона.'],
+  ['coins', '#e5484d', 'Аренда', 'Встал на чужую клетку — платишь владельцу. Транспорт: $250k, $500k, $1,000k или $2,000k, смотря сколько его у владельца. Янтарный комбинат и Маяк — сумма кубиков × 40k, а если у владельца оба — × 100k.'],
+  ['cathedral', '#f08530', 'Группы и постройки', 'Собрал все клетки одного цвета — аренда без построек удваивается и можно ставить дома: до четырёх, потом отель. Строить нужно равномерно. За один ход — не больше одного дома на каждую цветную группу. Домов в городе всего 32, отелей 12: кончились — жди, пока кто-то продаст.'],
+  ['key', '#5b6b8c', 'Залог', 'Нужны деньги — заложи клетку за половину цены. Аренду она не приносит. Выкуп — залог плюс 10%. Не выкупил за 15 своих ходов — клетка уходит банку и снова продаётся.'],
+  ['swap', '#e0569f', 'Обмен', 'Предложить обмен можно только в свой ход, до броска кубиков. Стороны должны быть примерно равны: по цене участков и доплате разница не больше 50%. Подарки и сговоры не пройдут.'],
+  ['taxi', '#f2b705', 'Такси у Дома Советов', 'Встал на такси — можешь заплатить и уехать. 1 случайное поле — $300k, 3 поля — $800k, 5 полей — $1,500k: поля выпадают наугад, ты выбираешь одно из них. Можно и просто остаться.'],
+  ['jam', '#2a3b5f', 'Тюрьма', 'Клетка «Полиция», три дубля подряд или карточка ставят тебя в тюрьму на Эстакадном мосту. Выехать: выбросить дубль, заплатить $500k или сыграть карту «Объезд». На третьей попытке платишь $500k и едешь.'],
+  ['deckD', '#7357e8', 'Движ и Сторис', 'Карточки «Движ» куда-то тебя везут, «Сторис» приносят или забирают деньги. Бывают и сюрпризы: пожар, ремонт участка (3 хода без аренды), проверка у самого богатого (2 хода), прораб — дом за полцены, перекрытый проспект — пропуск хода. «Обмен по пьяни» включается в лобби.'],
   ['timer', '#0f9b94', 'Таймер', 'На каждое решение есть время. Не успел — игра сама бросит кубики, откажется от покупки (клетка уйдёт на аукцион) или спасует на аукционе.'],
-  ['ball', '#dba514', 'Мячик и общак', 'Мячик Челси лежит на случайной клетке: встал на неё — получи +$5 000, мячик улетает дальше. Общак на парковке — домашнее правило, его включает создатель комнаты: тогда штрафы копятся и достаются тому, кто встал на парковку.'],
+  ['ball', '#dba514', 'Мячик и общак', 'Мячик Челси лежит на случайной клетке: встал на неё — получи +$500k, мячик улетает дальше. Общак у Дома Советов — домашнее правило, его включает создатель комнаты: тогда штрафы копятся и достаются тому, кто встал на парковку.'],
   ['crown', '#a9683f', 'Победа', 'Нечем платить и нечего продать — банкрот: всё уходит тому, кому должен. Последний оставшийся забирает Калининград.'],
 ];
 function rulesModal() {

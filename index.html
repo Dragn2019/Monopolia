@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<meta name="theme-color" content="#0b1322">
+<!-- Адрес сервера игры. Пусто = тот же сайт, где открыта игра (так и надо на Render). -->
+<meta name="km-server" content="">
+<title>Кёниг Магнат</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Crect width='48' height='48' rx='11' fill='%230b1322'/%3E%3Cpath fill='%23ffc24d' d='M9 34 7 15l10 8 7-13 7 13 10-8-2 19z'/%3E%3Crect x='9' y='35.500' width='30' height='4' rx='1.500' fill='%23fff'/%3E%3C/svg%3E">
+<script>
+window.bootErrors = [];
+window.addEventListener('error', function(e) {
+  var m = e.target && e.target !== window ? 'Не загрузился файл: ' + (e.target.src || e.target.href || '') : (e.message || 'Ошибка запуска') + ' (строка ' + e.lineno + ')';
+  window.bootErrors.push(m);
+  var box = document.getElementById('boot-message');
+  if (box && !window.gameStarted) box.textContent = window.bootErrors.join('\n');
+}, true);
+setTimeout(function() {
+  var box = document.getElementById('boot-message');
+  if (box && !window.gameStarted) box.textContent = window.bootErrors.join('\n') || 'Запуск занимает больше 15 секунд. Нажмите «Проверить загрузку» и отправьте скриншот результата.';
+}, 15000);
+</script>
+<link rel="stylesheet" href="style.css?v=20261122-m1-28">
+</head>
+<body>
+<div id="boot" style="position:fixed;inset:0;z-index:99999;background:#f0f2f0;color:#22392f;padding:32px;font:18px system-ui;overflow:auto">
+<h2>Кёниг Магнат</h2><p id="boot-message" style="white-space:pre-wrap">Загрузка игры… Светлая версия</p>
+<a href="diagnostics.html" style="color:#ffc24d">Проверить загрузку</a>
+<noscript><p>Для игры нужно включить JavaScript в браузере.</p></noscript></div>
+<div id="home" class="screen hide">
+  <div class="skyslot"></div>
+  <div class="cardbox">
+    <div><h1 class="logo">Кёниг <b>Магнат</b></h1><p class="sub" style="margin-top:8px">Скупи весь Калининград раньше друзей</p></div>
+    <input id="hname" maxlength="14" placeholder="Твоё имя" autocomplete="off">
+    <button class="primary" id="bsolo">Создать комнату на одного · тест</button>
+    <button class="primary" id="bcreate">Создать комнату</button>
+    <div class="row"><input id="hcode" maxlength="5" placeholder="Код комнаты" autocomplete="off" style="text-transform:uppercase"><button class="fix" id="bjoin">Войти</button></div>
+    <button class="ghost hide" id="bresume"></button>
+    <button class="ghost" id="bdemo">Демо: владельцы, дома и обмен</button>
+    <button class="ghost" id="blocal">Играть на одном устройстве</button>
+    <button class="ghost sm" id="brules">Правила</button>
+  </div>
+</div>
+
+<div id="lobby" class="screen hide"><div class="skyslot"></div><div class="cardbox" id="lobbybox"></div></div>
+
+<div id="game" class="hide"><div id="boardwrap"><div id="board"></div></div></div>
+<div id="fx"></div>
+<div id="modal" class="hide"></div>
+<div id="toast" class="hide"></div>
+
+<script defer src="relay.js?v=20261122-m1-28"></script>
+<script defer src="data.js?v=20261122-m1-28"></script>
+<script defer src="art.js?v=20261122-m1-28"></script>
+<script defer src="engine.js?v=20261122-m1-28"></script>
+<script defer src="app.js?v=20261122-m1-28"></script>
+</body>
+</html>

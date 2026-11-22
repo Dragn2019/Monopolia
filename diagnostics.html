@@ -1,0 +1,31 @@
+<!doctype html><html lang="ru"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Проверка игры</title>
+<body style="background:#0b1322;color:white;font:17px system-ui;padding:20px"><h1>Проверка игры</h1><p>Версия 19.11 · сервер. Дождитесь результатов и отправьте скриншот создателю игры.</p><pre id="out" style="white-space:pre-wrap;overflow-wrap:anywhere">Страница диагностики открылась.
+</pre><noscript>JavaScript выключен.</noscript><a href="./" style="color:#ffc24d">Вернуться в игру</a>
+<script>
+var out = document.getElementById('out');
+function log(s) { out.textContent += s + '\n'; }
+log(navigator.userAgent);
+log('WebSocket: ' + (window.WebSocket ? 'есть' : 'нет'));
+try { localStorage.setItem('km_diag', '1'); localStorage.removeItem('km_diag'); log('Хранилище: доступно'); } catch(e) { log('Хранилище: недоступно — ' + e.message); }
+['style.css','data.js','art.js','engine.js','app.js','relay.js'].forEach(function(f) {
+ var finished = false;
+ var timer = setTimeout(function() { finished = true; log(f + ': нет ответа за 15 секунд'); },15000);
+ fetch(f + '?diagnostic=' + Date.now(), {cache:'no-store'}).then(function(r) {
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  return r.text();
+ }).then(function(t) {
+  if (finished) return; finished=true; clearTimeout(timer);
+  log(f + ': загружен (' + t.length + ' символов)' + (/^\s*<!doctype html/i.test(t) ? ' — ОШИБКА: вместо файла пришёл HTML' : ''));
+ }).catch(function(e) { if (!finished) { finished=true; clearTimeout(timer); log(f + ': ' + e.message); } });
+});
+var done=false;
+function finish(s){ if(done) return; done=true; log(s); }
+var base=(location.origin);
+setTimeout(function(){finish('Сервер игры: нет ответа за 70 секунд. Если сервер спал, обновите страницу через минуту.');},70000);
+fetch(base+'/health',{cache:'no-store'}).then(function(r){return r.text();}).then(function(t){
+  log('Сервер игры: отвечает ('+t+')');
+  var ws=new WebSocket(base.replace(/^http/,'ws')+'/ws');
+  ws.onopen=function(){ finish('Соединение для комнат: работает. Можно играть.'); ws.close(); };
+  ws.onerror=function(){ finish('Соединение для комнат: ОШИБКА. Сайт открывается, но WebSocket блокируется сетью.'); };
+}).catch(function(e){ finish('Сервер игры: недоступен — '+e.message); });
+</script></body></html>

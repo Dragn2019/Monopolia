@@ -535,7 +535,7 @@ function showCardPop(e) {
   const p = V && V.players.find((x) => x.id === e.pid);
   pop.innerHTML = `<div class="gcard ${e.deck} pop"><b>${e.deck === 'D' ? 'Движ' : 'Сторис'}${p ? ` · <span style="color:${tokOf(p.token).color}">${esc(p.name)}</span>` : ''}</b>${esc(e.text)}</div>`;
   pop.classList.remove('hide'); clearTimeout(showCardPop.t);
-  showCardPop.t = setTimeout(() => pop.classList.add('hide'), Math.min(4200, 2400 + e.text.length * 18));
+  showCardPop.t = setTimeout(() => pop.classList.add('hide'), Math.min(9000, 5000 + e.text.length * 30));
   pop.onclick = () => pop.classList.add('hide');
 }
 function placeTokens() {
@@ -778,7 +778,7 @@ function cellModal(i) {
     const b = (type, label, cls) => { const r = actionError(type, i); return r && type === 'build' ? `<p class="reason">${esc(r)}</p>` : r ? '' : `<button class="${cls || ''}" data-m="${type}">${label}</button>`; };
     let acts = '';
     if (c.t === 'prop' && h < 5) acts += b('build', `${h === 4 ? 'Построить отель' : 'Поставить ★' + (h + 1)} · ${money(Engine.houseCost(V, PL(my), c))}${PL(my) && PL(my).halfHouse ? ' (прораб)' : ''}`, 'primary');
-    if (h) acts += b('sell', 'Продать ★ · +' + money(GROUPS[c.g].house / 2));
+    if (h) acts += b('sell', 'Продать ★ · +' + money(Engine.sellBack(c)));
     if (!h) acts += V.mort[i] ? b('unmortgage', 'Выкупить · ' + money(Engine.unmortCost(i)), 'primary') : b('mortgage', 'Заложить · +' + money(c.price / 2));
     if (acts) body += `<div class="property-actions">${acts}</div>`;
   }
@@ -815,11 +815,11 @@ function pickConfirm(i, type) {
   const c = BOARD[i], h = V.houses[i] || 0;
   type = type || (h ? 'sell' : 'mortgage');
   const r = actionError(type, i);
-  const gain = type === 'sell' ? GROUPS[c.g].house / 2 : c.price / 2;
+  const gain = type === 'sell' ? Engine.sellBack(c) : c.price / 2;
   $('#modal').innerHTML = `<div class="win small"><div class="deed" style="--g:${cellColor(c)}">${deedHead(i)}</div>
     <h2>${type === 'sell' ? (h === 5 ? 'Продать отель?' : 'Продать дом?') : 'Заложить участок?'}</h2>
     <p class="big-gain">+${money(gain)}</p>
-    <p class="sub">${type === 'sell' ? 'Банк выкупает постройку за половину цены.' : `Аренду он приносить не будет. Выкуп — ${money(Engine.unmortCost(i))}. Не выкупишь за ${DATA.MORT_TURNS} своих ходов — уйдёт банку.`}</p>
+    <p class="sub">${type === 'sell' ? 'Банк выкупает постройку по полной цене.' : `Аренду он приносить не будет. Выкуп — ${money(Engine.unmortCost(i))}. Не выкупишь за ${DATA.MORT_TURNS} своих ходов — уйдёт банку.`}</p>
     ${r ? `<p class="reason">${esc(r)}</p>` : ''}
     <div class="btns"><button class="primary" id="pyes" ${r ? 'disabled' : ''}>${type === 'sell' ? 'Продать' : 'Заложить'}</button><button class="ghost" id="pno">Отмена</button></div></div>`;
   $('#pno').onclick = closeModal;
@@ -846,7 +846,7 @@ function manageModal() {
   const cells = BOARD.map((c, i) => i).filter((i) => V.owner[i] === my);
   const rows = cells.map((i) => {
     const c = BOARD[i], h = V.houses[i] || 0;
-    const [type, label] = h ? ['sell', (h === 5 ? 'Продать отель' : 'Продать дом') + ' +' + money(GROUPS[c.g].house / 2)] : V.mort[i] ? ['unmortgage', 'Выкупить ' + money(Engine.unmortCost(i))] : ['mortgage', 'Заложить +' + money(c.price / 2)];
+    const [type, label] = h ? ['sell', (h === 5 ? 'Продать отель' : 'Продать дом') + ' +' + money(Engine.sellBack(c))] : V.mort[i] ? ['unmortgage', 'Выкупить ' + money(Engine.unmortCost(i))] : ['mortgage', 'Заложить +' + money(c.price / 2)];
     const reason = actionError(type, i);
     return `<div class="mrow"><i style="background:${cellColor(c)}"></i><span>${esc(c.name)}${h ? ' <small>' + (h === 5 ? 'отель' : '★'.repeat(h)) + '</small>' : V.mort[i] ? ' <small>заложен</small>' : ''}</span><button class="sm ${type === 'unmortgage' ? 'ghost' : ''}" data-m="${type}" data-c="${i}" ${reason ? 'disabled title="' + esc(reason) + '"' : ''}>${label}</button></div>`;
   }).join('') || '<p class="sub">У тебя пока нет участков</p>';
@@ -919,11 +919,11 @@ function menuModal() {
   $('#mexit').onclick = (e) => twice(e.target, () => { location.hash = ''; mode = null; location.reload(); });
 }
 const RULES = [
-  ['dice', '#4263eb', 'Ход', 'Бросаешь два кубика и едешь по кругу. Дубль даёт ещё один бросок, три дубля подряд отправляют в тюрьму. За каждый круг через Площадь Победы получаешь $2,000k, а если встал ровно на неё — $4,000k. Банк платит только первые 10 кругов каждого игрока — дальше деньги надо зарабатывать.'],
+  ['dice', '#4263eb', 'Ход', 'Бросаешь два кубика и едешь по кругу. Дубль даёт ещё один бросок, три дубля подряд отправляют в тюрьму. За каждый круг через Площадь Победы получаешь $1,000k, а если встал ровно на неё — $2,000k. Банк платит только первые 10 кругов каждого игрока — дальше деньги надо зарабатывать.'],
   ['house', '#2aa566', 'Покупка и аукцион', 'Встал на свободную клетку — можешь купить её по цене. Отказался или не хватает денег — клетка уходит на аукцион между остальными игроками. Первая ставка равна цене участка; шаг — $200k. Пас — выход из аукциона.'],
   ['coins', '#e5484d', 'Аренда', 'Встал на чужую клетку — платишь владельцу. Транспорт: $250k, $500k, $1,000k или $2,000k, смотря сколько его у владельца. Янтарный комбинат и Маяк — сумма кубиков × 40k, а если у владельца оба — × 100k.'],
   ['cathedral', '#f08530', 'Группы и постройки', 'Собрал все клетки одного цвета — аренда без построек удваивается и можно ставить дома: до четырёх, потом отель. Строить нужно равномерно. За один ход — не больше одного дома на каждую цветную группу. Домов в городе всего 32, отелей 12: кончились — жди, пока кто-то продаст.'],
-  ['key', '#5b6b8c', 'Залог', 'Нужны деньги — заложи клетку за половину цены. Аренду она не приносит. Выкуп — залог плюс 20%. Не выкупил за 15 своих ходов — клетка уходит банку и снова продаётся.'],
+  ['key', '#5b6b8c', 'Залог', 'Нужны деньги — заложи клетку за половину цены. Аренду она не приносит. Выкуп — залог плюс 20%. Не выкупил за 15 своих ходов — клетка уходит банку и снова продаётся. Дома банк выкупает по той же цене, за которую ты их построил.'],
   ['swap', '#e0569f', 'Обмен', 'Предложить обмен можно только в свой ход, до броска кубиков. Стороны должны быть примерно равны: по цене участков и доплате разница не больше 50%. Подарки и сговоры не пройдут.'],
   ['taxi', '#f2b705', 'Такси у Дома Советов', 'Встал на такси — можешь заплатить и уехать. 1 случайное поле — $300k, 3 поля — $800k, 5 полей — $1,500k: поля выпадают наугад, ты выбираешь одно из них. Можно и просто остаться.'],
   ['jam', '#2a3b5f', 'Тюрьма', 'Клетка «Полиция», три дубля подряд или карточка ставят тебя в тюрьму на Эстакадном мосту. Выехать: выбросить дубль, заплатить $500k или сыграть карту «Объезд». На третьей попытке платишь $500k и едешь.'],

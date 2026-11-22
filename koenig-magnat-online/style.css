@@ -759,3 +759,13 @@ body>#cardpop{position:fixed}
 #game #board .cell.mort::after{content:none;display:none}
 #game #board .cell.mort .pic{filter:grayscale(1);opacity:.35}
 #game #board .cell.mort .pr.rent{background:#6f7a81!important;opacity:1}
+
+/* ===== v11: такси ярче, фишки чуть заметнее ===== */
+#game #board .cell.taxi-opt{box-shadow:0 0 0 4px #ffc400,0 0 26px 6px #ffc400cc;z-index:6;animation:taxiglow2 .8s ease-in-out infinite alternate}
+#game #board .cell.taxi-opt::before{content:"";position:absolute;inset:0;border-radius:2px;background:#ffc40033;pointer-events:none;z-index:1}
+@keyframes taxiglow2{from{box-shadow:0 0 0 4px #ffc400,0 0 26px 6px #ffc400cc;transform:scale(1)}to{box-shadow:0 0 0 4px #ffe066,0 0 12px 2px #ffc40066;transform:scale(1.03)}}
+#game #board .cell.taxi-opt .pr{filter:none}
+/* Фишки: мягкий ореол в цвете игрока, у того, кто ходит, — дыхание */
+#game .tok .tk{box-shadow:0 0 0 3.5px var(--tc),0 0 0 5px #fff,0 0 14px 3px color-mix(in srgb,var(--tc) 70%,transparent),0 3px 10px #000c}
+#game .tok.active{animation:tokbreath 1.4s ease-in-out infinite}
+@keyframes tokbreath{0%,100%{scale:1}50%{scale:1.12}}

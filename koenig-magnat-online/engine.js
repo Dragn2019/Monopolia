@@ -48,6 +48,8 @@
   // Как в классике: одно предприятие — кубики ×4 (40k), оба — кубики ×10 (100k)
   // Потушить: половина стоимости поля с домами, но не больше FIRE_COST
   E.fireCost = (s, i) => { const c = BOARD[i], h = s.houses[i] || 0, v = c.price + (c.t === 'prop' ? h * GROUPS[c.g].house : 0); return Math.min(DATA.FIRE_COST, Math.max(10, Math.round(v / 2 / 10) * 10)); };
+  // Продажа дома банку: полная цена дома (SELL_RATE = 1)
+  E.sellBack = (c) => GROUPS[c.g].house * DATA.SELL_RATE;
   E.houseCost = (s, p, c) => (p && p.halfHouse ? GROUPS[c.g].house / 2 : GROUPS[c.g].house);
   E.utilMult = (s, i) => (s.owner[i] && countType(s, s.owner[i], 'utility') >= 2 ? 10 : 4);
   E.netWorth = (s, p) => {
@@ -55,7 +57,7 @@
     BOARD.forEach((c, i) => {
       if (s.owner[i] !== p.id) return;
       w += s.mort[i] ? c.price / 2 : c.price;
-      if (s.houses[i]) w += (s.houses[i] * GROUPS[c.g].house) / 2;
+      if (s.houses[i]) w += s.houses[i] * E.sellBack(c);
     });
     return w;
   };
@@ -269,18 +271,18 @@
   function doBankrupt(s, p) {
     const d = s.debt && s.debt.pid === p.id ? s.debt : null;
     const cred = d && d.to && d.to !== 'pot' && d.to !== 'each' ? P(s, d.to) : null;
-    let fee = 0;
+    // Все поля сдавшегося становятся пустыми: дома снесены, залоги сняты, поля снова продаются
     BOARD.forEach((c, i) => {
       if (s.owner[i] !== p.id) return;
-      if (s.houses[i]) { if (cred) cred.money += (s.houses[i] * GROUPS[c.g].house) / 2; delete s.houses[i]; }
-      if (cred) { s.owner[i] = cred.id; if (s.mort[i]) fee += mortFee(i); } else { delete s.owner[i]; delete s.mort[i]; if (s.mortT) delete s.mortT[i]; }
+      delete s.houses[i]; delete s.owner[i]; delete s.mort[i];
+      if (s.mortT) delete s.mortT[i]; if (s.closed) delete s.closed[i];
     });
-    if (cred) { cred.money += Math.max(0, p.money); cred.jailCards += p.jailCards; cred.money -= Math.min(fee, cred.money); }
+    if (cred) cred.money += Math.max(0, p.money);
     p.money = 0; p.jailCards = 0; p.bankrupt = true; p.jail = 0;
     if (d) s.debt = null;
     if (s.trade && (s.trade.from === p.id || s.trade.to === p.id)) s.trade = null;
     ev(s, { t: 'bankrupt', pid: p.id });
-    log(s, `${p.name} банкрот${cred ? `, всё имущество уходит игроку ${cred.name}` : ', имущество возвращается в город'}`);
+    log(s, `${p.name} выбывает${cred ? `: остаток денег уходит игроку ${cred.name}` : ''}, все поля снова свободны`);
     if (alive(s).length <= 1) return endGame(s);
     if (cur(s).id === p.id) nextTurn(s);
   }
@@ -288,7 +290,13 @@
   function burnDown(s) {
     const f = s.fire, c = BOARD[f.cell], o = P(s, f.pid);
     f.h = s.houses[f.cell] || 0; if (s.closed) delete s.closed[f.cell];
-    delete s.houses[f.cell]; delete s.owner[f.cell]; delete s.mort[f.cell]; if (s.mortT) delete s.mortT[f.cell];
+    delete s.houses[f.cell];
+    // Группа развалилась — дома на соседних полях банк выкупает по цене продажи
+    if (c.t === 'prop') {
+      let back = 0;
+      groupCells(c.g).forEach((k) => { const h = s.houses[k] || 0; if (k !== f.cell && h && s.owner[k] === o.id) { back += h * E.sellBack(c); delete s.houses[k]; } });
+      if (back) { o.money += back; log(s, `Группа «${GROUPS[c.g].name}» развалилась: остальные дома снесены, банк вернул ${o.name} ${money(back)}`); }
+    } delete s.owner[f.cell]; delete s.mort[f.cell]; if (s.mortT) delete s.mortT[f.cell];
     s.fire = null;
     ev(s, { t: 'burned', cell: f.cell, pid: o.id });
     log(s, `«${c.name}» сгорело${f.h ? ' вместе с домами' : ''}: поле вернулось в банк и снова продаётся`);
@@ -407,7 +415,7 @@
       if (s.step !== 'taxi' || !s.taxi || !s.taxi.cells || !s.taxi.cells.includes(a.cell)) return 'Туда такси не едет';
       const p = cur(s); s.taxi = null; s.step = 'move';
       log(s, `${p.name} едет на такси в «${BOARD[a.cell].name}»`);
-      moveTo(s, p, a.cell, false, 'jump');
+      moveTo(s, p, a.cell, true, 'jump'); // проехал через Старт — получи деньги
       if (land(s, p)) finishMove(s);
     },
     taxiStay(s, a) {
@@ -485,7 +493,7 @@
       if (h < Math.max(...groupHouses(s, c.g))) return 'Продавай равномерно по всей группе';
       // Сеть разбирается обратно на точки, но только на столько, сколько их есть в банке
       if (h === 5 && E.bank(s).houses < 4) return 'Для продажи отеля нужны 4 свободных дома в банке';
-      const to = h === 5 ? 4 : h - 1, back = ((h - to) * GROUPS[c.g].house) / 2;
+      const to = h === 5 ? 4 : h - 1, back = (h - to) * E.sellBack(c);
       if (to) s.houses[i] = to; else delete s.houses[i];
       P(s, a.pid).money += back;
       ev(s, { t: 'sell', pid: a.pid, cell: i, amount: back });
@@ -591,7 +599,8 @@
       t.give.forEach((i) => (s.owner[i] = y.id)); t.get.forEach((i) => (s.owner[i] = x.id));
       s.trade = null;
       ev(s, { t: 'deal', from: x.id, to: y.id });
-      log(s, `${x.name} и ${y.name} ударили по рукам`);
+      const side = (list, m) => [...list.map((i) => '«' + BOARD[i].name + '»'), ...(m ? [money(m)] : [])].join(', ') || 'ничего';
+      log(s, `${x.name} и ${y.name} ударили по рукам: ${x.name} отдаёт ${side(t.give, t.giveMoney)}, ${y.name} отдаёт ${side(t.get, t.getMoney)}`);
     },
     rejectTrade(s, a) {
       const t = s.trade;

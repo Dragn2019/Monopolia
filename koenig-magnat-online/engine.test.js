@@ -37,9 +37,9 @@ test('Owner saves for half the value (max FIRE_COST) and keeps buildings', () =>
   assert.equal(cost, Math.min(D.FIRE_COST, (D.BOARD[cell].price + 2 * D.GROUPS[D.BOARD[cell].g].house) / 2));
   act(s, 'fireSave'); assert.equal(owner.money, before - cost); assert.equal(s.houses[cell], 2); assert.equal(s.owner[cell], owner.id); assert.equal(s.fire, null); assert.notEqual(E.actor(s), drawer);
 });
-test('Owner refuses: buildings demolished, property back to bank, group frozen', () => {
+test('Owner refuses: buildings demolished, group houses sold back, property back to bank', () => {
   const { s, owner, cells } = fireGameSolo(); const cell = s.fire.cell, other = cells.find(i => i !== cell);
-  act(s, 'fireGiveUp'); assert.equal(s.owner[cell], undefined); assert.equal(s.houses[cell], undefined); assert.equal(s.houses[other], 2);
+  const m = owner.money; act(s, 'fireGiveUp'); assert.equal(s.owner[cell], undefined); assert.equal(s.houses[cell], undefined); assert.ok(!s.houses[other]); assert.equal(owner.money, m + 2 * D.GROUPS[D.BOARD[other].g].house * D.SELL_RATE);
   assert.ok(E.apply(s, { type: 'build', pid: owner.id, cell: other }));
 });
 test('Not enough money: must raise it by mortgaging, then can save', () => {
@@ -81,7 +81,7 @@ test('Mortgage returns to bank after 15 own turns',()=>{
   s.turn=s.players.indexOf(p); s.step='end'; act(s,'endTurn'); assert.equal(s.owner[1],undefined); assert.ok(!s.mort[1]);
 });
 test('Landing exactly on Start pays double',()=>{
-  const s=game(2),p=s.players[s.turn]; s.solo=true; p.pos=35; const m=p.money; act(s,'roll',{dice:[2,3]}); assert.equal(p.pos,0); assert.equal(p.money,m+400);
+  const s=game(2),p=s.players[s.turn]; s.solo=true; p.pos=35; const m=p.money; act(s,'roll',{dice:[2,3]}); assert.equal(p.pos,0); assert.equal(p.money,m+D.LAP_EXACT);
   const s2=game(2),p2=s2.players[s2.turn]; s2.solo=true; p2.pos=35; const m2=p2.money; act(s2,'roll',{dice:[3,4]}); assert.equal(p2.pos,2); assert.ok(p2.money>=m2+200-200);
 });
 const drawFx=(s,deck,pred)=>{s.decks[deck]=[D.CARDS[deck].findIndex(pred)];};
@@ -126,5 +126,12 @@ test('Third jail turn: pay the fine even on a double',()=>{
 test('Fire never hits other players',()=>{
   const s=game(2); s.solo=true; const other=s.players.find(p=>p.id!==E.actor(s)); s.owner[39]=other.id; s.houses[39]=0; s.decks.D=[FIRE]; s.players[s.turn].pos=(DCELL-3+40)%40;
   act(s,'roll',{dice:[1,2]}); assert.equal(s.fire,null); assert.equal(s.owner[39],other.id);
+});
+test('Taxi through Start pays the lap money',()=>{
+  const s=game(2),p=s.players[s.turn]; s.solo=true; s.ball=-1; p.pos=15; act(s,'roll',{dice:[2,3]}); act(s,'taxiBuy',{n:1}); s.taxi.cells=[3]; const m=p.money; act(s,'taxiGo',{cell:3}); assert.equal(p.pos,3); assert.equal(p.money,m+D.LAP);
+});
+test('Surrender: all fields become empty and free',()=>{
+  const s=game(3),p=s.players[s.turn]; E.groupCells(1).forEach(i=>{s.owner[i]=p.id;s.houses[i]=2;}); s.owner[5]=p.id; s.mort[5]=true;
+  act(s,'bankrupt'); assert.ok(p.bankrupt); [...E.groupCells(1),5].forEach(i=>{assert.equal(s.owner[i],undefined);assert.ok(!s.houses[i]);assert.ok(!s.mort[i]);});
 });
 console.log(`${tests} checks passed`);

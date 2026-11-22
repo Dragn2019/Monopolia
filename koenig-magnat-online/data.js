@@ -92,7 +92,7 @@
       { text: 'Полина сделала что-то странное. Никто не понял что, но ты поменялся местами со случайным игроком.', fx: { swap: true } },
       { text: 'Шторм на Балтике, паром отменили. Вернись на 3 клетки назад.', fx: { by: -3 } },
       { text: 'Попутка до Светлогорска. Поехали к морю!', fx: { to: 37 } },
-      { text: 'Вспомнил, что оставил машину на Площади Победы. Отправляйся на старт и получи 200.', fx: { to: 0 } },
+      { text: 'Вспомнил, что оставил машину на Площади Победы. Отправляйся на старт и получи 300.', fx: { to: 0 } },
       { text: 'Как в истории с «Люменом»: где-то в городе пожар! Горит случайное твоё поле. Потуши его за половину стоимости поля с домами (но не больше 300), иначе оно сгорит вместе с домами и вернётся банку.', fx: { fire: true } },
       { text: 'Виталик прислал мем из Испании. Ты залип и проехал 4 клетки вперёд.', fx: { by: 4 } },
       { text: 'Завтрак в ВДНХ лечит всё. Отправляйся в кафе ВДНХ.', fx: { to: 6 } },
@@ -144,8 +144,8 @@
   for (const deck of Object.values(CARDS)) for (const card of deck) {
     card.text = card.text.replace(/\b\d+\b/g, (n) => +n >= 20 ? money(+n) : n);
   }
-  BOARD[0].note = 'Старт: ' + money(100) + ' за каждый круг, встал ровно сюда — ' + money(200) + '. Банк платит только первые 10 кругов каждого игрока';
-  const DATA = { money, kfmt, GROUPS, BOARD, TOKENS, CARDS, LUMEN, CLUBS, AUCTION_STEP: 20, START_MONEY: 1500, LAP: 100, LAP_EXACT: 200, JAIL: 10, JAIL_FEE: 50, BALL_BONUS: 50, FIRE_COST: 300, PAID_LAPS: 10, SELL_RATE: 1, MORT_TURNS: 15, TAXI: [{ n: 1, cost: 30 }, { n: 3, cost: 80 }, { n: 5, cost: 150 }] };
+  BOARD[0].note = 'Старт: ' + money(200) + ' за каждый круг, встал ровно сюда — ' + money(300) + '. Банк платит только первые 10 кругов каждого игрока';
+  const DATA = { money, kfmt, GROUPS, BOARD, TOKENS, CARDS, LUMEN, CLUBS, AUCTION_STEP: 20, START_MONEY: 1500, LAP: 200, LAP_EXACT: 300, JAIL: 10, JAIL_FEE: 50, BALL_BONUS: 50, FIRE_COST: 300, PAID_LAPS: 10, SELL_RATE: 1, MORT_TURNS: 15, TAXI: [{ n: 1, cost: 30 }, { n: 3, cost: 80 }, { n: 5, cost: 150 }] };
   if (typeof module !== 'undefined') module.exports = DATA;
   root.DATA = DATA;
 })(typeof window !== 'undefined' ? window : globalThis);

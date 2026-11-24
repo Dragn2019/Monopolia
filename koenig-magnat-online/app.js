@@ -665,7 +665,7 @@ function renderStage() {
       const what = cred ? 'Аренда · ' + esc(cred.name) : d.to === 'each' ? 'Выплата всем' : 'Платёж';
       if (my === d.pid) {
         h = `<h3 class="turnh">${what}: ${money(d.amount)}</h3>${lack > 0 ? `<p>Не хватает ${money(lack)}. Заложи участки или продай дома.</p>` : ''}`;
-        h += `<div class="btns">${btn((cred ? 'Оплатить аренду ' : 'Оплатить ') + money(d.amount), { type: 'payDebt' }, 'primary', lack > 0)}${manage('Заложить')}</div>`;
+        h += `<div class="btns">${btn((cred ? 'Оплатить аренду ' : 'Оплатить ') + money(d.amount), { type: 'payDebt' }, 'primary', lack > 0)}${manage('Заложить')}${lack > 0 ? btn('Сдаться', { type: 'bankrupt' }, 'danger') : ''}</div>`;
       } else h = `<p class="wait"><b>${esc(dp.name)}</b> платит ${money(d.amount)}${cred ? ' игроку ' + esc(cred.name) : ''}…</p>`;
     } else if (V.step === 'taxi' && V.taxi) {
       const tx = V.taxi;
@@ -696,7 +696,7 @@ function renderStage() {
   $('#spot').innerHTML = spot;
   const tbe = $('#tradebar'); tbe.innerHTML = tb; tbe.classList.toggle('hide', !tb);
   const A = $('#actions'); A.innerHTML = h; A.classList.remove('busy');
-  const wire = (root) => root.querySelectorAll('[data-a]').forEach((b) => (b.onclick = () => { const a = JSON.parse(b.dataset.a); if (a.type === 'fireGiveUp' && !b.dataset.confirm) { b.dataset.confirm = '1'; b.textContent = 'Точно отдать поле?'; return; } act(a.type, a); }));
+  const wire = (root) => root.querySelectorAll('[data-a]').forEach((b) => (b.onclick = () => { const a = JSON.parse(b.dataset.a); if ((a.type === 'fireGiveUp' || a.type === 'bankrupt') && !b.dataset.confirm) { b.dataset.confirm = '1'; b.textContent = a.type === 'bankrupt' ? 'Точно сдаться?' : 'Точно отдать поле?'; return; } act(a.type, a); }));
   wire(A); wire(tbe);
   A.querySelectorAll('[data-manage]').forEach((b) => (b.onclick = startPick));
   renderPick();

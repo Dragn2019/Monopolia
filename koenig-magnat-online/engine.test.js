@@ -32,9 +32,9 @@ test('Fire hits a built property and the owner decides', () => {
   const { s, owner, cells } = fireGameSolo();
   assert.ok(s.fire); assert.equal(E.actor(s), owner.id); assert.ok(cells.includes(s.fire.cell));
 });
-test('Owner saves for half the value (max FIRE_COST) and keeps buildings', () => {
+test('Owner saves for 80% of the value (min FIRE_COST) and keeps buildings', () => {
   const { s, owner, drawer } = fireGameSolo(); const cell = s.fire.cell, before = owner.money, cost = s.fire.cost;
-  assert.equal(cost, Math.min(D.FIRE_COST, (D.BOARD[cell].price + 2 * D.GROUPS[D.BOARD[cell].g].house) / 2));
+  assert.equal(cost, Math.max(D.FIRE_COST, Math.round((D.BOARD[cell].price + 2 * D.GROUPS[D.BOARD[cell].g].house) * 0.8 / 10) * 10));
   act(s, 'fireSave'); assert.equal(owner.money, before - cost); assert.equal(s.houses[cell], 2); assert.equal(s.owner[cell], owner.id); assert.equal(s.fire, null); assert.notEqual(E.actor(s), drawer);
 });
 test('Owner refuses: buildings demolished, group houses sold back, property back to bank', () => {
@@ -43,8 +43,8 @@ test('Owner refuses: buildings demolished, group houses sold back, property back
   assert.ok(E.apply(s, { type: 'build', pid: owner.id, cell: other }));
 });
 test('Not enough money: must raise it by mortgaging, then can save', () => {
-  const { s, owner } = fireGameSolo(20); s.owner[5] = owner.id; assert.ok(E.apply(s, { type: 'fireSave', pid: owner.id }));
-  act(s, 'mortgage', { cell: 5 }); assert.equal(owner.money, 120); act(s, 'fireSave'); assert.equal(s.fire, null);
+  const { s, owner } = fireGameSolo(210); s.owner[5] = owner.id; assert.ok(E.apply(s, { type: 'fireSave', pid: owner.id }));
+  act(s, 'mortgage', { cell: 5 }); assert.equal(owner.money, 310); act(s, 'fireSave'); assert.equal(s.fire, null);
 });
 test('While fire is pending others cannot act', () => {
   const { s, drawer } = fireGameSolo(); const other = s.players.find(p => p.id !== drawer).id; assert.ok(E.apply(s, { type: 'proposeTrade', pid: other, to: drawer, giveMoney: 10 })); assert.ok(E.apply(s, { type: 'roll', pid: other })); assert.ok(E.apply(s, { type: 'roll', pid: drawer }));
@@ -108,7 +108,7 @@ test('Drunk swap only with the lobby option',()=>{
 });
 test('Fire can hit an unbuilt plot: half its price to save',()=>{
   const s=game(2); s.solo=true; const o=s.players.find(p=>p.id===E.actor(s)); s.owner[39]=o.id; s.decks.D=[FIRE]; s.players[s.turn].pos=(DCELL-3+40)%40;
-  act(s,'roll',{dice:[1,2]}); assert.equal(s.fire.cell,39); assert.equal(s.fire.cost,Math.min(D.FIRE_COST,D.BOARD[39].price/2));
+  act(s,'roll',{dice:[1,2]}); assert.equal(s.fire.cell,39); assert.equal(s.fire.cost,Math.max(D.FIRE_COST,Math.round(D.BOARD[39].price*0.8/10)*10));
 });
 test('Start pays only the first PAID_LAPS laps',()=>{
   const s=game(2),p=s.players[s.turn]; s.solo=true; p.laps=D.PAID_LAPS; p.pos=38; s.ball=-1; const m=p.money; act(s,'roll',{dice:[1,2]}); assert.equal(p.laps,D.PAID_LAPS+1); assert.equal(p.money,m);

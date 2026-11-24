@@ -769,3 +769,9 @@ body>#cardpop{position:fixed}
 #game .tok .tk{box-shadow:0 0 0 3.5px var(--tc),0 0 0 5px #fff,0 0 14px 3px color-mix(in srgb,var(--tc) 70%,transparent),0 3px 10px #000c}
 #game .tok.active{animation:tokbreath 1.4s ease-in-out infinite}
 @keyframes tokbreath{0%,100%{scale:1}50%{scale:1.12}}
+/* Окно анимируется только при открытии; при обновлении состояния не мигает */
+#modal.shown .win,#modal.shown .win *{animation:none!important}
+
+/* v12: сдаться в панели аренды */
+#game #stage button.danger:not(.primary):not(.link):not(.manage){background:transparent;color:#d64545;box-shadow:inset 0 0 0 1.5px #f1c3c3}
+#game #stage button.danger:not(.primary):not(.link):not(.manage):hover{background:#fdecec}

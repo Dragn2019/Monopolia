@@ -46,8 +46,8 @@
     return ownsGroup(s, o, c.g) ? c.rent[0] * 2 : c.rent[0];
   };
   // Как в классике: одно предприятие — кубики ×4 (40k), оба — кубики ×10 (100k)
-  // Потушить: половина стоимости поля с домами, но не больше FIRE_COST
-  E.fireCost = (s, i) => { const c = BOARD[i], h = s.houses[i] || 0, v = c.price + (c.t === 'prop' ? h * GROUPS[c.g].house : 0); return Math.min(DATA.FIRE_COST, Math.max(10, Math.round(v / 2 / 10) * 10)); };
+  // Потушить: 80% стоимости поля с домами, но не меньше FIRE_COST
+  E.fireCost = (s, i) => { const c = BOARD[i], h = s.houses[i] || 0, v = c.price + (c.t === 'prop' ? h * GROUPS[c.g].house : 0); return Math.max(DATA.FIRE_COST, Math.round(v * 0.8 / 10) * 10); };
   // Продажа дома банку: полная цена дома (SELL_RATE = 1)
   E.sellBack = (c) => GROUPS[c.g].house * DATA.SELL_RATE;
   E.houseCost = (s, p, c) => (p && p.halfHouse ? GROUPS[c.g].house / 2 : GROUPS[c.g].house);

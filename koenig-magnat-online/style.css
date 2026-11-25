@@ -801,3 +801,16 @@ body>#cardpop{position:fixed}
 .lteam .tok{width:26px;height:26px;flex:none}
 .lteams .vs{align-self:center;font-weight:800;opacity:.5}
 .teamsub{margin:2px 0 6px}
+
+.appver{margin:2px 0 0;text-align:center;font-size:12px;color:#9aa5ad;letter-spacing:.04em}
+
+/* v14: лобби и меню листаются, кнопка «Начать» всегда видна */
+.screen{height:100%;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;display:flex;flex-direction:column;align-items:center}
+.screen>.cardbox{margin:auto 0;flex:none}
+.backlink{justify-self:start;margin:-14px 0 -6px -4px;text-decoration:none;font-size:14px}
+.stickstart{position:sticky;bottom:12px;z-index:2;box-shadow:0 10px 30px #233b2f40,0 0 0 8px #fff}
+.screen .sky{position:fixed}
+#game #chatform select{-webkit-appearance:none;appearance:none;field-sizing:content;width:auto;min-width:0;padding:7px 26px 7px 10px;background:#3a4045 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23e9edf0' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right 10px center}
+/* v15: звёзды отеля торчат в центр доски — оставляем им полосу, чтобы не налезали на чат и кнопки */
+#game.mode-wide .hubin{--starband:calc(clamp(12px,calc(var(--bs) * .022),20px) + 6px);padding:max(var(--starband),clamp(8px,1.6vh,16px))}
+#game.mode-wide #feed{margin-left:0}

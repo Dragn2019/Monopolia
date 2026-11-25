@@ -396,6 +396,7 @@ function renderLobby() {
   const o = V.opt, host = isHost();
   const seg = [0, 30, 60, 90].map((t) => `<button class="${o.timer === t ? 'on' : ''}" data-timer="${t}" ${host ? '' : 'disabled'}>${t ? t + ' с' : 'выкл'}</button>`).join('');
   box.innerHTML = `
+    <button class="link backlink" id="bmenuL">← В главное меню</button>
     ${mode === 'local' ? (V.solo ? '<h2>Комната на одного · тест</h2><p class="sub">Можно начать одному. Таймер выключен — бросайте кубики, покупайте участки и проверяйте игру.</p>' : '<h2>На одном устройстве</h2><p class="sub">Добавьте игроков по очереди и передавайте устройство по кругу</p>') : `
       <p class="sub">Код комнаты</p><div class="codebig">${esc(code)}</div>
       <div class="row"><input readonly value="${esc(link)}" id="llink"><button class="fix" id="bcopy">Копировать</button></div>
@@ -410,9 +411,10 @@ function renderLobby() {
       <div class="opt"><span>Мячик Челси<small>+${money(DATA.BALL_BONUS)} тому, кто встал на клетку с мячиком</small></span><button class="sw2 ${o.ball ? 'on' : ''}" data-opt="ball" ${host ? '' : 'disabled'}></button></div>
       <div class="opt"><span>2×2 — командами<small>Нужно ровно 4 игрока. Напарнику не платишь аренду и меняешься с ним без ограничения 50%</small></span><button class="sw2 ${o.teams ? 'on' : ''}" data-opt="teams" ${host ? '' : 'disabled'}></button></div>
       ${o.teams ? teamsPreview(o, host) : ''}
+      <div class="opt"><span>Поджигатель вместо камеры<small>Поле «Штраф с камеры» становится полем пожара: встал — горит твоё случайное поле, как в карточке</small></span><button class="sw2 ${o.firecell ? 'on' : ''}" data-opt="firecell" ${host ? '' : 'disabled'}></button></div>
       <div class="opt"><span>Обмен по пьяни<small>Карточка «Сторис»: твой случайный участок меняется со случайным участком соседа</small></span><button class="sw2 ${o.drunk ? 'on' : ''}" data-opt="drunk" ${host ? '' : 'disabled'}></button></div>
     </div>
-    ${host ? `<button class="primary" id="bstart" ${V.players.length < (V.solo ? 1 : 2) || (o.teams && V.players.length !== 4) ? 'disabled' : ''}>Начать игру (${V.players.length}/6)</button>` : '<p class="sub">Ждём, пока создатель комнаты начнёт игру</p>'}
+    ${host ? `<button class="primary stickstart" id="bstart" ${V.players.length < (V.solo ? 1 : 2) || (o.teams && V.players.length !== 4) ? 'disabled' : ''}>Начать игру (${V.players.length}/6)</button>` : '<p class="sub">Ждём, пока создатель комнаты начнёт игру</p>'}
     <button class="ghost sm" id="brulesL">Правила</button>`;
   if (hadFocus) { const i = $('#lname'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }
   box.querySelectorAll('[data-tok]').forEach((b) => (b.onclick = () => { if (!taken(b.dataset.tok)) { pickedToken = b.dataset.tok; renderLobby(); } }));
@@ -429,6 +431,7 @@ function renderLobby() {
     if (mode === 'local') renderLobby();
   };
   $('#brulesL').onclick = () => openModal(rulesModal);
+  $('#bmenuL').onclick = () => { if (mode === 'client' && V.players.some((p) => p.id === myPid)) { act('leave', { pid: myPid }); setTimeout(leave, 300); } else leave(); };
   if ($('#bstart')) $('#bstart').onclick = () => act('start', { pid: V.hostId });
   if ($('#bcopy')) $('#bcopy').onclick = copyLink;
 }
@@ -568,8 +571,14 @@ function setDice(d) {
   const map = { 1: [4], 2: [0, 8], 3: [0, 4, 8], 4: [0, 2, 6, 8], 5: [0, 2, 4, 6, 8], 6: [0, 2, 3, 5, 6, 8] };
   $$('.die').forEach((el, k) => [...el.children].forEach((i, n) => i.classList.toggle('on', (map[d[k]] || []).includes(n))));
 }
+const FIRE_ART = '<svg viewBox="0 0 48 48" class="art"><path fill="#ff7a1a" d="M24 3c2 9 12 13 12 25a12 12 0 0 1-24 0c0-6 3-10 6-13 0 5 2 8 5 9-2-8 0-15 1-21z"/><path fill="#ffd166" d="M24 22c1 5 6 7 6 13a6 6 0 0 1-12 0c0-4 2-6 4-8 0 2 1 4 2 4-1-3 0-6 0-9z"/></svg>';
 function renderBoard() {
   if (!boardBuilt) buildBoard();
+  BOARD.forEach((c, i) => {
+    if (!c.fireAlt) return;
+    const d = $('#c' + i), on = !!(V.opt && V.opt.firecell);
+    if (d && d.dataset.fireon !== String(on)) { d.dataset.fireon = on; d.classList.toggle('firecell', on); d.querySelector('.pic').innerHTML = on ? FIRE_ART : Art.cell(i); d.querySelector('.nm').textContent = on ? c.fireAlt : c.name; d.setAttribute('aria-label', on ? c.fireAlt : c.name); }
+  });
   const wrap = $('#boardwrap'), actor = Engine.actor(V), ap = PL(actor);
   BOARD.forEach((c, i) => {
     const d = document.getElementById('c' + i), o = V.owner[i], op = o && PL(o);
@@ -785,7 +794,8 @@ function cellModal(i) {
   } else if (c.t === 'utility') {
     const m = Engine.utilMult(V, i);
     body += `<table class="rent">${row('Одно предприятие', 'кубики × ' + DATA.kfmt(4), o && !V.mort[i] && m === 4)}${row('Оба', 'кубики × ' + DATA.kfmt(10), o && !V.mort[i] && m === 10)}</table><p class="sub">Залог ${money(c.price / 2)}</p>`;
-  } else if (c.t === 'tax') body += `<p>Платёж ${money(c.amount)} ${V.opt.pot ? 'в общак' : 'в банк'}.</p>`;
+  } else if (c.t === 'tax' && c.fireAlt && V.opt.firecell) body += `<p>Встал сюда — загорается твоё случайное незаложенное поле. Потушить можно за 80% его стоимости с домами (минимум ${money(DATA.FIRE_COST)}), иначе оно сгорит и вернётся банку.</p>`;
+  else if (c.t === 'tax') body += `<p>Платёж ${money(c.amount)} ${V.opt.pot ? 'в общак' : 'в банк'}.</p>`;
   else if (c.t === 'card') body += '<p class="sub">Тяни карточку и смотри, что выпало.</p>';
   else body += `<p>${esc(c.t === 'parking' ? (c.note + (V.opt.pot ? '. В общаке: ' + money(V.pot) : '')) : c.note || '')}</p>`;
   if (Engine.buyable(c) && o === my && V.phase === 'play') {
@@ -944,6 +954,7 @@ const RULES = [
   ['deckD', '#7357e8', 'Движ и Сторис', 'Карточки «Движ» куда-то тебя везут, «Сторис» приносят или забирают деньги. Бывают и сюрпризы: пожар, ремонт участка (3 хода без аренды), проверка у самого богатого (2 хода), прораб — дом за полцены, перекрытый проспект — пропуск хода. «Обмен по пьяни» включается в лобби.'],
   ['timer', '#0f9b94', 'Таймер', 'На каждое решение есть время. Не успел — игра сама бросит кубики, откажется от покупки (клетка уйдёт на аукцион) или спасует на аукционе.'],
   ['ball', '#dba514', 'Мячик и общак', 'Мячик Челси лежит на случайной клетке: встал на неё — получи +$500k, мячик улетает дальше. Общак у Дома Советов — домашнее правило, его включает создатель комнаты: тогда штрафы копятся и достаются тому, кто встал на парковку.'],
+  ['fire', '#e0602b', 'Поджигатель', 'Опция в лобби. Поле «Штраф с камеры» превращается в «Поджигателя»: встал на него — загорается твоё случайное незаложенное поле. Тушишь за 80% стоимости поля с домами (минимум ' + money(DATA.FIRE_COST) + ') или отдаёшь его банку.'],
   ['swap', '#3d7be0', 'Режим 2×2', 'Четыре игрока, две команды. Ходите по очереди: игрок одной команды, потом другой. На поле напарника аренду не платишь, а меняться с ним можно без ограничения 50%. С соперниками обмен как обычно. Побеждает команда, в которой остался хоть один игрок.'],
   ['crown', '#a9683f', 'Победа', 'Нечем платить и нечего продать — банкрот: всё уходит тому, кому должен. Последний оставшийся забирает Калининград.'],
 ];
@@ -971,6 +982,7 @@ $('#blocal').onclick = startLocal;
 $('#bsolo').onclick = startSolo;
 $('#bdemo').onclick = startDemo;
 $('#brules').onclick = () => openModal(rulesModal);
+{ const sc = document.querySelector('script[src*="app.js"]'), m = sc && sc.src.match(/v=[\d-]*?(m[\w-]+)$/); $('#appver').textContent = 'Версия ' + (m ? m[1] : '?'); }
 (function () {
   const localRaw = LS.get('km_local_v2');
   if (localRaw) { try { const saved = JSON.parse(localRaw); if (saved.version === 2 && saved.phase !== 'over') { const b = $('#bresume'); b.classList.remove('hide'); b.textContent = 'Продолжить сохранённую игру'; b.onclick = () => { mode = 'local'; myPid = null; S = saved; S.ev = []; lastKey = ''; commit(); }; return; } } catch(e) {} }

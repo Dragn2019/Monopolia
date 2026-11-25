@@ -168,3 +168,17 @@ test('2x2: game ends when a whole team is out, other team wins',()=>{
   assert.equal(s.phase,'over');assert.notEqual(s.winTeam,s.team[p.id]);assert.equal(s.team[s.winner],s.winTeam);
 });
 console.log(`${tests} checks passed`);
+
+test('fire cell option: landing on camera cell starts a fire instead of a fine',()=>{
+  const ci=D.BOARD.findIndex(c=>c.fireAlt);assert.ok(ci>0);
+  for(const on of [false,true]){
+    const s=E.newGame('host');E.apply(s,{type:'join',pid:'a',name:'A',token:D.TOKENS[0].id});E.apply(s,{type:'join',pid:'b',name:'B',token:D.TOKENS[1].id});
+    E.apply(s,{type:'setOpt',pid:'host',opt:{firecell:on}});E.apply(s,{type:'start',pid:'host'});s.ball=-1;
+    const p=s.players[s.turn];s.owner[1]=p.id;const before=p.money;
+    p.pos=ci-3;const orig=E.rng;let k=0;E.rng=()=>[0.0,0.2][k++%2];
+    E.apply(s,{type:"roll",pid:p.id});E.rng=orig;
+    assert.equal(p.pos,ci,"landed on fire cell");
+    if(on){assert.equal(s.step,'fire');assert.equal(s.fire.cell,1);assert.equal(p.money,before);}
+    else{assert.notEqual(s.step,'fire');assert.ok(p.money<before);}
+  }
+});

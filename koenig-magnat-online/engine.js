@@ -14,7 +14,7 @@
   E.newGame = (hostId) => ({
     version: 2, phase: 'lobby', hostId, players: [], turn: 0, step: 'roll', dice: [0, 0], doubles: 0, again: false, rolls: 0,
     owner: {}, houses: {}, mort: {}, mortT: {}, closed: {}, pot: 0, ball: -1, decks: { D: [], S: [] },
-    opt: { timer: 60, pot: false, ball: true, drunk: false, teams: false, pair: 0 },
+    opt: { timer: 60, pot: false, ball: true, drunk: false, teams: false, pair: 0, firecell: false },
     auction: null, trade: null, debt: null, fire: null, card: null, log: [], ev: [], seq: 0, winner: null, final: null, afk: null, deadline: 0,
   });
 
@@ -182,6 +182,7 @@
       log(s, `${p.name} платит ${money(r)} игроку ${P(s, o).name} за «${c.name}»`);
       s.debt = {pid:p.id,amount:r,to:o}; s.step='debt'; return false;
     }
+    if (c.t === 'tax' && c.fireAlt && s.opt.firecell) { log(s, `${p.name} встаёт на поле «${c.fireAlt}» — у него что-то загорелось`); return startFire(s, p); }
     if (c.t === 'tax') { log(s, `${p.name}: ${c.name}, −${money(c.amount)}`); return pay(s, p, c.amount, 'pot'); }
     if (c.t === 'gotojail') { toJail(s, p); return true; }
     if (c.t === 'parking') {
@@ -192,6 +193,17 @@
     }
     if (c.t === 'card') return drawCard(s, p, c.deck);
     return true;
+  }
+  // Пожар: горит случайное своё незаложенное поле (карточка или поле «Поджигатель»)
+  function startFire(s, p) {
+    const owned = BOARD.map((c, i) => i).filter((i) => s.owner[i] === p.id && !s.mort[i]);
+    if (!owned.length) { log(s, `У ${p.name} гореть нечему — своих полей нет. Обошлось`); return true; }
+    const cell = owned[rnd(owned.length)], o = P(s, s.owner[cell]);
+    s.fire = { cell, pid: o.id, cost: E.fireCost(s, cell) };
+    s.step = 'fire';
+    ev(s, { t: 'fire', cell, pid: o.id });
+    log(s, `Пожар на «${BOARD[cell].name}»! ${o.name} решает: потушить за ${money(s.fire.cost)} или отдать поле${s.houses[cell] ? ' вместе с домами' : ''}`);
+    return false;
   }
   function drawCard(s, p, deck) {
     if (!s.decks[deck].length) s.decks[deck] = shuffle(CARDS[deck].map((_, k) => k).filter((k) => !CARDS[deck][k].fx.drunk || s.opt.drunk));
@@ -222,18 +234,7 @@
       moveTo(s, p, i, true);
       return land(s, p, 2);
     }
-    if (fx.lumen || fx.fire) {
-      // Горит любое купленное поле, а с ним и дома на нём
-      // Горит у того, кто вытянул карточку
-      const owned = BOARD.map((c, i) => i).filter((i) => s.owner[i] === p.id && !s.mort[i]);
-      if (!owned.length) { log(s, `У ${p.name} гореть нечему — своих полей нет. Обошлось`); return true; }
-      const cell = owned[rnd(owned.length)], o = P(s, s.owner[cell]);
-      s.fire = { cell, pid: o.id, cost: E.fireCost(s, cell) };
-      s.step = 'fire';
-      ev(s, { t: 'fire', cell, pid: o.id });
-      log(s, `Пожар на «${BOARD[cell].name}»! ${o.name} решает: потушить за ${money(s.fire.cost)} или отдать поле${s.houses[cell] ? ' вместе с домами' : ''}`);
-      return false;
-    }
+    if (fx.lumen || fx.fire) return startFire(s, p);
     if (fx.swap) {
       const o = alive(s).filter((x) => x.id !== p.id && !x.jail);
       if (o.length) {
@@ -377,6 +378,7 @@
       if (typeof o.ball === 'boolean') s.opt.ball = o.ball;
       if (typeof o.drunk === 'boolean') s.opt.drunk = o.drunk;
       if (typeof o.teams === 'boolean') s.opt.teams = o.teams;
+      if (typeof o.firecell === 'boolean') s.opt.firecell = o.firecell;
       if ([0, 1, 2].includes(o.pair)) s.opt.pair = o.pair;
     },
     start(s, a) {

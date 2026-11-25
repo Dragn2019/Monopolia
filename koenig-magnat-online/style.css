@@ -775,3 +775,29 @@ body>#cardpop{position:fixed}
 /* v12: сдаться в панели аренды */
 #game #stage button.danger:not(.primary):not(.link):not(.manage){background:transparent;color:#d64545;box-shadow:inset 0 0 0 1.5px #f1c3c3}
 #game #stage button.danger:not(.primary):not(.link):not(.manage):hover{background:#fdecec}
+
+/* v13: чат левее, смайлики крупнее */
+#game.mode-wide #feed{margin-left:calc(-1 * clamp(8px,1.6vh,16px) + 2px)}
+#game #feedlist{padding-left:0}
+#game #chatform select{margin-left:0}
+#game #chatform #bemoji{width:44px;height:44px;font-size:28px;line-height:1}
+#emopanel{grid-template-columns:repeat(6,1fr);gap:4px;padding:10px}
+#emopanel button{font-size:30px;width:52px;height:52px}
+#game #feedlist .emo1{font-size:24px;line-height:1;vertical-align:-3px}
+
+/* v14: режим 2×2 — команды */
+#game #players.teams{gap:14px}
+#game #players.teams .team{display:flex;flex-direction:column;gap:8px;padding:8px 0 0;border-top:2px solid var(--tc);position:relative}
+#game #players.teams .team.t0{--tc:#4f8cff}
+#game #players.teams .team.t1{--tc:#ff6b6b}
+#game #players.teams .thd{font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--tc);padding-left:2px}
+#game.mode-narrow #leftcol #players.teams,#game.mode-narrow #players.teams{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+#game.mode-narrow #players.teams .team{gap:6px}
+.lteams{display:flex;align-items:stretch;gap:8px;margin:4px 0 6px}
+.lteam{flex:1;display:flex;flex-direction:column;gap:6px;padding:8px 10px;border-radius:12px;background:#ffffff0d;border-top:3px solid #4f8cff}
+.lteam.t1{border-top-color:#ff6b6b}
+.lteam small{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;opacity:.75}
+.lteam span{display:flex;align-items:center;gap:8px;font-weight:700}
+.lteam .tok{width:26px;height:26px;flex:none}
+.lteams .vs{align-self:center;font-weight:800;opacity:.5}
+.teamsub{margin:2px 0 6px}

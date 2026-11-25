@@ -134,4 +134,37 @@ test('Surrender: all fields become empty and free',()=>{
   const s=game(3),p=s.players[s.turn]; E.groupCells(1).forEach(i=>{s.owner[i]=p.id;s.houses[i]=2;}); s.owner[5]=p.id; s.mort[5]=true;
   act(s,'bankrupt'); assert.ok(p.bankrupt); [...E.groupCells(1),5].forEach(i=>{assert.equal(s.owner[i],undefined);assert.ok(!s.houses[i]);assert.ok(!s.mort[i]);});
 });
+
+// ---- Режим 2×2 ----
+function teamGame(pair=0){const s=E.newGame('host');for(let i=0;i<4;i++)assert.equal(E.apply(s,{type:'join',pid:'p'+i,name:'Игрок '+i,token:D.TOKENS[i].id}),null);assert.equal(E.apply(s,{type:'setOpt',pid:'host',opt:{teams:true,pair}}),null);return s;}
+test('2x2 needs exactly 4 players and pairs teams by choice',()=>{
+  const s=E.newGame('host');for(let i=0;i<3;i++)E.apply(s,{type:'join',pid:'p'+i,name:'И'+i,token:D.TOKENS[i].id});E.apply(s,{type:'setOpt',pid:'host',opt:{teams:true}});
+  assert.ok(E.apply(s,{type:'start',pid:'host'}));
+  const t=teamGame(1);assert.equal(E.apply(t,{type:'start',pid:'host'}),null);
+  assert.ok(E.mate(t,'p0','p2'));assert.ok(E.mate(t,'p1','p3'));assert.ok(!E.mate(t,'p0','p1'));
+  // Очерёдность: команды чередуются
+  assert.notEqual(t.team[t.players[0].id],t.team[t.players[1].id]);assert.equal(t.team[t.players[0].id],t.team[t.players[2].id]);
+});
+test('2x2: no rent on teammate field, rent on opponent field',()=>{
+  const s=teamGame(0);E.apply(s,{type:'start',pid:'host'});const p=s.players[s.turn],mate=s.players.find(x=>x!==p&&E.mate(s,p.id,x.id)),opp=s.players.find(x=>x!==p&&!E.mate(s,p.id,x.id));
+  s.solo=true;s.ball=-1;s.owner[3]=mate.id;p.pos=0;const m=p.money;act(s,'roll',{dice:[1,2]});
+  assert.equal(s.debt,null);assert.equal(p.money,m);
+  const s2=teamGame(0);E.apply(s2,{type:'start',pid:'host'});const q=s2.players[s2.turn],o2=s2.players.find(x=>x!==q&&!E.mate(s2,q.id,x.id));
+  s2.solo=true;s2.ball=-1;s2.owner[3]=o2.id;q.pos=0;act(s2,'roll',{dice:[1,2]});assert.ok(s2.debt&&s2.debt.to===o2.id);
+});
+test('2x2: unequal trade allowed with teammate only',()=>{
+  const s=teamGame(0);E.apply(s,{type:'start',pid:'host'});const p=s.players[s.turn],mate=s.players.find(x=>x!==p&&E.mate(s,p.id,x.id)),opp=s.players.find(x=>x!==p&&!E.mate(s,p.id,x.id));
+  s.owner[39]=p.id;assert.equal(E.apply(s,{type:'proposeTrade',pid:p.id,to:mate.id,give:[39],get:[],giveMoney:0,getMoney:0}),null);
+  act(s,'acceptTrade',{pid:mate.id});assert.equal(s.owner[39],mate.id);
+  s.owner[37]=p.id;assert.ok(E.apply(s,{type:'proposeTrade',pid:p.id,to:opp.id,give:[37],get:[],giveMoney:0,getMoney:0}));
+});
+test('2x2: game ends when a whole team is out, other team wins',()=>{
+  const s=teamGame(0);E.apply(s,{type:'start',pid:'host'});const p=s.players[s.turn],mate=s.players.find(x=>x!==p&&E.mate(s,p.id,x.id));
+  act(s,'bankrupt');assert.equal(s.phase,'play');
+  mate.bankrupt=true;const left=s.players.find(x=>!x.bankrupt&&x.id!==mate.id);
+  // Второй игрок команды сдаётся в свой ход
+  while(E.actor(s)!==mate.id&&s.players[s.turn].id!==mate.id){s.turn=(s.turn+1)%4;} mate.bankrupt=false;
+  assert.equal(E.apply(s,{type:'bankrupt',pid:mate.id}),null);
+  assert.equal(s.phase,'over');assert.notEqual(s.winTeam,s.team[p.id]);assert.equal(s.team[s.winner],s.winTeam);
+});
 console.log(`${tests} checks passed`);

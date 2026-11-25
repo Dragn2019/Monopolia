@@ -14,13 +14,19 @@
   E.newGame = (hostId) => ({
     version: 2, phase: 'lobby', hostId, players: [], turn: 0, step: 'roll', dice: [0, 0], doubles: 0, again: false, rolls: 0,
     owner: {}, houses: {}, mort: {}, mortT: {}, closed: {}, pot: 0, ball: -1, decks: { D: [], S: [] },
-    opt: { timer: 60, pot: false, ball: true, drunk: false },
+    opt: { timer: 60, pot: false, ball: true, drunk: false, teams: false, pair: 0 },
     auction: null, trade: null, debt: null, fire: null, card: null, log: [], ev: [], seq: 0, winner: null, final: null, afk: null, deadline: 0,
   });
 
   const P = (s, id) => s.players.find((p) => p.id === id);
   const cur = (s) => s.players[s.turn];
   const alive = (s) => s.players.filter((p) => !p.bankrupt);
+  // Режим 2×2: напарники не платят друг другу аренду и меняются без ограничения 50%
+  const PAIRS = [[[0, 1], [2, 3]], [[0, 2], [1, 3]], [[0, 3], [1, 2]]];
+  E.PAIRS = PAIRS;
+  E.mate = (s, a, b) => !!(s.team && a && b && a !== b && s.team[a] !== undefined && s.team[a] === s.team[b]);
+  const teamsLeft = (s) => new Set(alive(s).map((p) => s.team[p.id])).size;
+  const over = (s) => alive(s).length <= 1 || (s.team && teamsLeft(s) <= 1);
   const log = (s, m) => { s.log.push(m); if (s.log.length > 80) s.log.shift(); };
   const ev = (s, e) => s.ev.push(e);
   const groupCells = (g) => BOARD.map((c, i) => (c.t === 'prop' && c.g === g ? i : -1)).filter((i) => i >= 0);
@@ -170,6 +176,7 @@
       const o = s.owner[i];
       if (!o) { s.step = 'buy'; ev(s, { t: 'offer', pid: p.id, cell: i }); return false; }
       if (o === p.id || s.mort[i]) return true;
+      if (E.mate(s, p.id, o)) { log(s, `${p.name} на поле напарника ${P(s, o).name} — аренду не платит`); return true; }
       if (s.closed && s.closed[i]) { log(s, `«${c.name}» ${s.closed[i].kind === 'check' ? 'закрыт на проверку' : 'на ремонте'} — ${p.name} проходит бесплатно`); return true; }
       const r = E.rent(s, i, s.dice[0] + s.dice[1]) * (mult || 1);
       log(s, `${p.name} платит ${money(r)} игроку ${P(s, o).name} за «${c.name}»`);
@@ -283,7 +290,7 @@
     if (s.trade && (s.trade.from === p.id || s.trade.to === p.id)) s.trade = null;
     ev(s, { t: 'bankrupt', pid: p.id });
     log(s, `${p.name} выбывает${cred ? `: остаток денег уходит игроку ${cred.name}` : ''}, все поля снова свободны`);
-    if (alive(s).length <= 1) return endGame(s);
+    if (over(s)) return endGame(s);
     if (cur(s).id === p.id) nextTurn(s);
   }
   // Отказ от спасения: постройки сносятся, поле возвращается банку и снова продаётся по обычной цене
@@ -304,9 +311,17 @@
   }
   function endGame(s) {
     s.final = s.players.map((p) => ({ id: p.id, worth: p.bankrupt ? 0 : E.netWorth(s, p) })).sort((a, b) => b.worth - a.worth);
+    if (s.team) {
+      // Побеждает команда, у которой остались живые игроки (или больше общий капитал, если игру завершили досрочно)
+      const sum = [0, 1].map((t) => s.final.filter((f) => s.team[f.id] === t).reduce((x, f) => x + f.worth, 0));
+      const live = [0, 1].map((t) => alive(s).some((p) => s.team[p.id] === t));
+      s.winTeam = live[0] !== live[1] ? (live[0] ? 0 : 1) : sum[0] >= sum[1] ? 0 : 1;
+      s.final.sort((a, b) => (s.team[b.id] === s.winTeam) - (s.team[a.id] === s.winTeam) || b.worth - a.worth);
+    }
     s.winner = s.final[0].id; s.phase = 'over'; s.auction = null; s.trade = null; s.debt = null;
     ev(s, { t: 'win', pid: s.winner });
-    log(s, `Игра окончена. Победил ${P(s, s.winner).name}!`);
+    if (s.team) log(s, `Игра окончена. Победила команда: ${s.players.filter((p) => s.team[p.id] === s.winTeam).map((p) => p.name).join(' и ')}!`);
+    else log(s, `Игра окончена. Победил ${P(s, s.winner).name}!`);
   }
   function endAuction(s) {
     const a = s.auction, c = BOARD[a.cell];
@@ -330,7 +345,7 @@
     if (a.money < t.giveMoney || b.money < t.getMoney) return 'Не хватает денег на обмен';
     if (!t.give.length && !t.get.length && !t.giveMoney && !t.getMoney) return 'Пустой обмен';
     const A = tradeValue(s, t.give, t.giveMoney), B = tradeValue(s, t.get, t.getMoney);
-    if (Math.min(A, B) < Math.max(A, B) * 0.5) return 'Обмен слишком неравный: стороны не могут отличаться больше чем на 50%';
+    if (!E.mate(s, a.id, b.id) && Math.min(A, B) < Math.max(A, B) * 0.5) return 'Обмен слишком неравный: стороны не могут отличаться больше чем на 50%';
     return null;
   }
   const myTurn = (s, a) => (s.phase === 'play' && cur(s).id === a.pid ? null : 'Сейчас не твой ход');
@@ -361,13 +376,22 @@
       if (typeof o.pot === 'boolean') s.opt.pot = o.pot;
       if (typeof o.ball === 'boolean') s.opt.ball = o.ball;
       if (typeof o.drunk === 'boolean') s.opt.drunk = o.drunk;
+      if (typeof o.teams === 'boolean') s.opt.teams = o.teams;
+      if ([0, 1, 2].includes(o.pair)) s.opt.pair = o.pair;
     },
     start(s, a) {
       if (s.phase !== 'lobby') return 'Игра уже идёт';
       if (a.pid !== s.hostId) return 'Начать может только создатель комнаты';
       if (s.players.length < (s.solo ? 1 : 2)) return s.solo ? 'Добавьте игрока' : 'Нужно минимум 2 игрока';
+      if (s.opt.teams && s.players.length !== 4) return 'Для режима 2×2 нужно ровно 4 игрока';
       if (s.players.length > 1) s.solo = false;
-      shuffle(s.players);
+      if (s.opt.teams) {
+        // Команды по выбранной паре; ходят по очереди: игрок одной команды, потом другой
+        const T = PAIRS[s.opt.pair || 0].map((pr) => shuffle(pr.map((k) => s.players[k])));
+        s.team = {}; T.forEach((t, k) => t.forEach((p) => (s.team[p.id] = k)));
+        const first = shuffle([0, 1]);
+        s.players = [T[first[0]][0], T[first[1]][0], T[first[0]][1], T[first[1]][1]];
+      } else { s.team = null; shuffle(s.players); }
       s.phase = 'play'; s.turn = 0; s.step = 'roll';
       moveBall(s, 0);
       ev(s, { t: 'start' }); ev(s, { t: 'turn', pid: cur(s).id });

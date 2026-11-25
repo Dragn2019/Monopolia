@@ -378,6 +378,12 @@ function render() {
   show('game'); renderGame();
   if (modalFn) rerenderModal();
 }
+function teamsPreview(o, host) {
+  if (V.players.length !== 4) return `<p class="sub teamsub">Для 2×2 нужно ровно 4 игрока, сейчас ${V.players.length}</p>`;
+  const T = Engine.PAIRS[o.pair || 0].map((pr) => pr.map((k) => V.players[k]));
+  const col = (t, k) => `<div class="lteam t${k}"><small>Команда ${k + 1}</small>${t.map((p) => `<span>${tokHTML(tokOf(p.token))}${esc(p.name)}</span>`).join('')}</div>`;
+  return `<div class="lteams">${col(T[0], 0)}<span class="vs">vs</span>${col(T[1], 1)}</div>${host ? '<button class="ghost sm" data-pair>Поменять пары</button>' : ''}`;
+}
 function renderLobby() {
   const box = $('#lobbybox');
   if (!V) { box.innerHTML = `<h2>Комната ${esc(code)}</h2><p class="sub">${esc(statusText)}</p><button class="ghost" onclick="location.hash='';location.reload()">Назад</button>`; return; }
@@ -402,14 +408,17 @@ function renderLobby() {
       <div class="opt"><span>Таймер хода<small>Не успел — игра сходит за тебя</small></span><div class="seg">${seg}</div></div>
       <div class="opt"><span>Общак у Дома Советов<small>Домашнее правило: штрафы копятся</small></span><button class="sw2 ${o.pot ? 'on' : ''}" data-opt="pot" ${host ? '' : 'disabled'}></button></div>
       <div class="opt"><span>Мячик Челси<small>+${money(DATA.BALL_BONUS)} тому, кто встал на клетку с мячиком</small></span><button class="sw2 ${o.ball ? 'on' : ''}" data-opt="ball" ${host ? '' : 'disabled'}></button></div>
+      <div class="opt"><span>2×2 — командами<small>Нужно ровно 4 игрока. Напарнику не платишь аренду и меняешься с ним без ограничения 50%</small></span><button class="sw2 ${o.teams ? 'on' : ''}" data-opt="teams" ${host ? '' : 'disabled'}></button></div>
+      ${o.teams ? teamsPreview(o, host) : ''}
       <div class="opt"><span>Обмен по пьяни<small>Карточка «Сторис»: твой случайный участок меняется со случайным участком соседа</small></span><button class="sw2 ${o.drunk ? 'on' : ''}" data-opt="drunk" ${host ? '' : 'disabled'}></button></div>
     </div>
-    ${host ? `<button class="primary" id="bstart" ${V.players.length < (V.solo ? 1 : 2) ? 'disabled' : ''}>Начать игру (${V.players.length}/6)</button>` : '<p class="sub">Ждём, пока создатель комнаты начнёт игру</p>'}
+    ${host ? `<button class="primary" id="bstart" ${V.players.length < (V.solo ? 1 : 2) || (o.teams && V.players.length !== 4) ? 'disabled' : ''}>Начать игру (${V.players.length}/6)</button>` : '<p class="sub">Ждём, пока создатель комнаты начнёт игру</p>'}
     <button class="ghost sm" id="brulesL">Правила</button>`;
   if (hadFocus) { const i = $('#lname'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }
   box.querySelectorAll('[data-tok]').forEach((b) => (b.onclick = () => { if (!taken(b.dataset.tok)) { pickedToken = b.dataset.tok; renderLobby(); } }));
   box.querySelectorAll('[data-rm]').forEach((b) => (b.onclick = () => act('leave', { pid: b.dataset.rm })));
   box.querySelectorAll('[data-timer]').forEach((b) => (b.onclick = () => act('setOpt', { pid: V.hostId, opt: { timer: +b.dataset.timer } })));
+  box.querySelectorAll('[data-pair]').forEach((b) => (b.onclick = () => act('setOpt', { pid: V.hostId, opt: { pair: ((o.pair || 0) + 1) % 3 } })));
   box.querySelectorAll('[data-opt]').forEach((b) => (b.onclick = () => act('setOpt', { pid: V.hostId, opt: { [b.dataset.opt]: !o[b.dataset.opt] } })));
   $('#bset').onclick = () => {
     const name = $('#lname').value.trim();
@@ -466,7 +475,8 @@ function buildBoard() {
   if (!left) { left = document.createElement('div'); left.id = 'leftcol'; $('#game').insertBefore(left, $('#boardwrap')); }
   left.innerHTML = `<div id="players"></div><div class="tools"><button id="bsound" title="Звук"></button><button id="bhelp" title="Правила">${IC.help}</button><button id="bmenu" title="Меню">${IC.menu}</button></div><div class="room" id="room"></div>`;
   $('#feednew').onclick = () => scrollFeed(true);
-  $('#feedlist').onscroll = () => { const l = $('#feedlist'); feedStick = l.scrollHeight - l.scrollTop - l.clientHeight < 40; if (feedStick) $('#feednew').classList.add('hide'); };
+  $('#feedlist').onscroll = () => { const l = $('#feedlist'); if (performance.now() < feedAuto) return; feedStick = l.scrollHeight - l.scrollTop - l.clientHeight < 80; if (feedStick) $('#feednew').classList.add('hide'); };
+  ['touchstart', 'wheel', 'pointerdown'].forEach((ev) => $('#feedlist').addEventListener(ev, () => { feedAuto = 0; }, { passive: true }));
   if (window.ResizeObserver) new ResizeObserver(() => { if (feedStick) { const l = $('#feedlist'); l.scrollTop = l.scrollHeight; } }).observe($('#feedlist'));
   $('#bsound').onclick = () => { Snd.toggle(); renderTop(); };
   $('#bhelp').onclick = () => openModal(rulesModal);
@@ -475,7 +485,7 @@ function buildBoard() {
   $('#bemoji').onclick = () => ep.classList.toggle('hide');
   ep.onclick = (e) => { const b2 = e.target.closest('[data-em]'); if (!b2) return; const inp = $('#chatin'), a = inp.selectionStart ?? inp.value.length, z = inp.selectionEnd ?? a; inp.value = (inp.value.slice(0, a) + b2.dataset.em + inp.value.slice(z)).slice(0, 140); inp.focus(); const k = a + b2.dataset.em.length; try { inp.setSelectionRange(k, k); } catch (er) {} };
   document.addEventListener('pointerdown', (e) => { if (!ep.classList.contains('hide') && !e.target.closest('#emopanel,#bemoji')) ep.classList.add('hide'); });
-  $('#chatform').onsubmit = (e) => { e.preventDefault(); const i2 = $('#chatin'), t = i2.value.trim(), to = $('#chatto').value; if (t) { act('chat', to ? { text: t, to } : { text: t }); i2.value = ''; ep.classList.add('hide'); } };
+  $('#chatform').onsubmit = (e) => { e.preventDefault(); const i2 = $('#chatin'), t = i2.value.trim(), to = $('#chatto').value; if (t) { act('chat', to ? { text: t, to } : { text: t }); i2.value = ''; scrollFeed(true); ep.classList.add('hide'); } };
   setDice([1, 1]);
   boardBuilt = true; layout();
 }
@@ -601,17 +611,19 @@ function renderBoard() {
 
 /* ---------- Центр: игроки, сцена, чат ---------- */
 function renderTop() {
-  $('#room').innerHTML = mode === 'local' ? '' : `<span class="dot ${online ? '' : 'off'}"></span>Комната <b>${esc(code)}</b> ${esc(statusText)}`;
+  $('#room').innerHTML = mode !== 'local' && !online ? `<span class="dot off"></span>${esc(statusText || 'Нет связи')}` : '';
   $('#bsound').innerHTML = Snd.on ? IC.son : IC.soff;
   $('#hub').classList.toggle('local', mode === 'local');
 }
 function renderPlayers() {
   const my = me(), actor = Engine.actor(V);
-  $('#players').innerHTML = V.players.map((p) => {
+  const chip = (p) => {
     const props = BOARD.filter((c, i) => V.owner[i] === p.id).length;
     const sub = p.bankrupt ? 'банкрот' : `${props} кл.${p.jail ? ' · в тюрьме' : ''}${p.jailCards ? ' · объезд ×' + p.jailCards : ''}${p.skip ? ' · пробка' : ''}${p.halfHouse ? ' · прораб' : ''}${mode !== 'local' && !p.on ? ' · не в сети' : ''}`;
     return `<div class="chip ${p.id === actor ? 'turn' : ''} ${p.bankrupt ? 'out' : ''}" id="pc_${p.id}" data-p="${p.id}" style="--pc:${tokOf(p.token).color}">${tokHTML(tokOf(p.token))}<span class="who"><span class="nm2">${esc(p.name)}${p.id === my && mode !== 'local' ? ' · ты' : ''}</span><small>${sub}</small></span><span class="mn">${p.bankrupt ? '—' : '<small class="cur">$</small>' + DATA.kfmt(p.money)}</span>${p.id === actor ? '<span class="secs"></span>' : ''}</div>`;
-  }).join('');
+  };
+  $('#players').classList.toggle('teams', !!V.team);
+  $('#players').innerHTML = V.team ? [0, 1].map((t) => { const ps = V.players.filter((p) => V.team[p.id] === t); return `<div class="team t${t}"><div class="thd">Команда ${t + 1}${ps.every((p) => p.bankrupt) ? ' · выбыла' : ''}</div>${ps.map(chip).join('')}</div>`; }).join('') : V.players.map(chip).join('');
   $$('#players .chip').forEach((c) => (c.onclick = () => openModal(() => playerModal(c.dataset.p))));
 }
 const cardHTML = (c, pop) => `<div class="gcard ${c.deck} ${pop ? 'pop' : ''}"><b>${c.deck === 'D' ? 'Движ' : 'Сторис'}</b>${esc(c.text)}</div>`;
@@ -642,7 +654,7 @@ function renderStage() {
   const manage = (label) => `<button class="manage" data-manage="1">${label || 'Заложить / продать'}</button>`;
   let spot = '', h = '', tb = '';
   if (V.phase === 'over') {
-    spot = `<div class="wincrown">${Art.art('crown')}</div><h3 class="turnh">Победил ${esc(PL(V.winner).name)}</h3><div class="rank">${V.final.map((f, k) => { const p = PL(f.id); return `<div class="pl">${tokHTML(tokOf(p.token))}<span class="nm2">${k + 1}. ${esc(p.name)}</span><span class="mn">${money(f.worth)}</span></div>`; }).join('')}</div>`;
+    spot = `<div class="wincrown">${Art.art('crown')}</div><h3 class="turnh">${V.team ? 'Победила команда ' + V.players.filter((p) => V.team[p.id] === V.winTeam).map((p) => esc(p.name)).join(' и ') : 'Победил ' + esc(PL(V.winner).name)}</h3><div class="rank">${V.final.map((f, k) => { const p = PL(f.id); return `<div class="pl">${tokHTML(tokOf(p.token))}<span class="nm2">${k + 1}. ${esc(p.name)}</span><span class="mn">${money(f.worth)}</span></div>`; }).join('')}</div>`;
     h = '<button class="primary big" id="bnew">Новая игра</button>';
   } else {
     if (V.trade && (local || my === V.trade.from || my === V.trade.to)) tb = renderTradePop(my, local, btn);
@@ -709,7 +721,8 @@ function renderStage() {
 }
 function leave() { pickMode = false; if ($('#pickbar')) $('#pickbar').remove(); if (mode === 'local') LS.del('km_local_v2'); if (mode === 'host') { LS.del('km_state_' + code); LS.del('km_last_host'); } V = null; S = null; mode = null; location.hash = ''; location.reload(); }
 let feedStick = true;
-function scrollFeed(force) { const l = $('#feedlist'); if (force || feedStick) { l.scrollTop = l.scrollHeight; feedStick = true; $('#feednew').classList.add('hide'); requestAnimationFrame(() => { if (feedStick) l.scrollTop = l.scrollHeight; }); } }
+let feedAuto = 0;
+function scrollFeed(force) { const l = $('#feedlist'); if (force || feedStick) { const go = () => { if (feedStick) { feedAuto = performance.now() + 120; l.scrollTop = l.scrollHeight; } }; feedStick = true; $('#feednew').classList.add('hide'); go(); requestAnimationFrame(go); setTimeout(go, 150); setTimeout(go, 600); } }
 // Имена игроков в событиях — их цветом
 function paint(html) {
   const ps = V.players.filter((p) => p.name.length >= 2).sort((a, b) => b.name.length - a.name.length);
@@ -717,6 +730,7 @@ function paint(html) {
   const re = new RegExp('(^|[^\\p{L}\\p{N}])(' + ps.map((p) => esc(p.name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|') + ')(?![\\p{L}\\p{N}])', 'gu');
   return html.replace(re, (m, pre, nm) => { const p = ps.find((q) => esc(q.name) === nm); return pre + `<b style="color:${tokOf(p.token).color}">${nm}</b>`; });
 }
+const emoWrap = (t) => t.replace(/(\p{Extended_Pictographic}(?:\uFE0F|\u200D\p{Extended_Pictographic}|\p{Emoji_Modifier})*)/gu, '<span class="emo1">$1</span>');
 function renderFeed() {
   const l = $('#feedlist'), near = feedStick, oldTop = l.scrollTop, local = mode === 'local';
   const seen = (x) => local || !x.to || x.to === myPid || x.c === myPid;
@@ -726,7 +740,7 @@ function renderFeed() {
     const p = PL(x.c), name = esc(p ? p.name : '?'), col = p ? tokOf(p.token).color : '#9aa5ad';
     if (x.kind === 'card') return `<div class="ln card-event"><b style="color:${col}">${name} · ${x.deck === 'D' ? 'Движ' : 'Сторис'}</b><p>${esc(x.t)}</p></div>`;
     const pm = x.to ? `<i class="pm">${x.c === myPid ? 'лично → ' + esc((PL(x.to) || {}).name || '?') : 'лично тебе'}</i>` : '';
-    return `<div class="ln chat ${x.to ? 'priv' : ''}"><b style="color:${col}">${name}</b>${pm} ${esc(x.t)}</div>`;
+    return `<div class="ln chat ${x.to ? 'priv' : ''}"><b style="color:${col}">${name}</b>${pm} ${emoWrap(esc(x.t))}</div>`;
   }).join('');
   if (content !== l.innerHTML) { l.innerHTML = content; if (near) scrollFeed(true); else { l.scrollTop = oldTop; $('#feednew').classList.remove('hide'); } }
   // Кому писать: всем или лично одному игроку
@@ -894,9 +908,9 @@ function tradeModal() {
 function tradeTotals() {
   const A = Engine.tradeValue(V, [...trade.give], (trade.giveMoney || 0) / 10), B = Engine.tradeValue(V, [...trade.get], (trade.getMoney || 0) / 10);
   $('#tA').innerHTML = 'Итого <b>' + money(A) + '</b>'; $('#tB').innerHTML = 'Итого <b>' + money(B) + '</b>';
-  const big = Math.max(A, B), diff = big ? Math.round((1 - Math.min(A, B) / big) * 100) : 0, ok = big > 0 && diff <= 50;
+  const big = Math.max(A, B), diff = big ? Math.round((1 - Math.min(A, B) / big) * 100) : 0, mate = Engine.mate(V, me(), trade.to), ok = big > 0 && (mate || diff <= 50);
   const el = $('#tbal'); el.classList.toggle('bad', big > 0 && !ok);
-  el.textContent = !big ? 'Выбери, что отдаёшь и что хочешь получить' : ok ? `Разница ${diff}% — можно предлагать` : `Разница ${diff}% — слишком неравно, максимум 50%`;
+  el.textContent = !big ? 'Выбери, что отдаёшь и что хочешь получить' : mate ? 'Напарник — меняйтесь как угодно, без ограничения 50%' : ok ? `Разница ${diff}% — можно предлагать` : `Разница ${diff}% — слишком неравно, максимум 50%`;
   $('#tsend').disabled = !ok;
 }
 function menuModal() {
@@ -930,6 +944,7 @@ const RULES = [
   ['deckD', '#7357e8', 'Движ и Сторис', 'Карточки «Движ» куда-то тебя везут, «Сторис» приносят или забирают деньги. Бывают и сюрпризы: пожар, ремонт участка (3 хода без аренды), проверка у самого богатого (2 хода), прораб — дом за полцены, перекрытый проспект — пропуск хода. «Обмен по пьяни» включается в лобби.'],
   ['timer', '#0f9b94', 'Таймер', 'На каждое решение есть время. Не успел — игра сама бросит кубики, откажется от покупки (клетка уйдёт на аукцион) или спасует на аукционе.'],
   ['ball', '#dba514', 'Мячик и общак', 'Мячик Челси лежит на случайной клетке: встал на неё — получи +$500k, мячик улетает дальше. Общак у Дома Советов — домашнее правило, его включает создатель комнаты: тогда штрафы копятся и достаются тому, кто встал на парковку.'],
+  ['swap', '#3d7be0', 'Режим 2×2', 'Четыре игрока, две команды. Ходите по очереди: игрок одной команды, потом другой. На поле напарника аренду не платишь, а меняться с ним можно без ограничения 50%. С соперниками обмен как обычно. Побеждает команда, в которой остался хоть один игрок.'],
   ['crown', '#a9683f', 'Победа', 'Нечем платить и нечего продать — банкрот: всё уходит тому, кому должен. Последний оставшийся забирает Калининград.'],
 ];
 function rulesModal() {
